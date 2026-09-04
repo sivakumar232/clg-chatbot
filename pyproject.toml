@@ -1,0 +1,32 @@
+[project]
+name = "chat-bot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "sivakumar232", email = "sivakumarr3105@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "dotenv>=0.9.9",
+    "langchain-community>=0.4.2",
+    "langchain-core>=1.6.1",
+    "langchain-google-genai>=4.4.0",
+    "langchain-qdrant>=1.1.0",
+    "markdownify>=1.2.3",
+    "pypdf>=6.16.2",
+    "qdrant-client>=1.19.0",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+chat-bot = "chat_bot:main"
+
+[build-system]
+requires = ["uv_build>=0.12.2,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pyright]
+include = ["."]
+extraPaths = ["."]
