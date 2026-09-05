@@ -12,6 +12,6 @@ class Settings:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
     GROQ_MODEL="llama-3.3-70b-versatile"
-    GEMINI_EMB_MODEL="models/text-embedding-004"
+    GEMINI_EMB_MODEL="gemini-embedding-001"
     
 settings = Settings()

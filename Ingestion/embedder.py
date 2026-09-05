@@ -19,7 +19,9 @@ def get_embedding_model():
     # Initialize the Google Gemini Embedding model
     embeddings = GoogleGenerativeAIEmbeddings(
         model=settings.GEMINI_EMB_MODEL,
-        google_api_key=settings.GEMINI_API_KEY
+        google_api_key=settings.GEMINI_API_KEY,
+        output_dimensionality=768,
+        client_options={"api_version": "v1"}
     )
     
     return embeddings
