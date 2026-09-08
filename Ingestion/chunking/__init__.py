@@ -1,3 +1,3 @@
-from .chunker import chunk_markdown, chunk_pdfs
+from .chunker import chunk_documents
 
-__all__ = ["chunk_markdown", "chunk_pdfs"]
+__all__ = ["chunk_documents"]

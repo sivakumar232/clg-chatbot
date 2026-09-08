@@ -31,10 +31,17 @@ def chunk_markdown(documents: list[Document], chunk_size: int = 1000, chunk_over
             combined_metadata = doc.metadata.copy()
             combined_metadata.update(hc.metadata)
             
+            source_ref = (
+                doc.metadata.get("source_url")
+                or doc.metadata.get("source", "Webpage")
+            )
+            page_title = source_ref.split("/")[-1].replace(".md", "").replace("-", " ").title()
+
             # Ensure no single chunk is larger than our chunk_size limit
             smaller_chunks = text_splitter.split_text(hc.page_content)
             for sc in smaller_chunks:
-                final_chunks.append(Document(page_content=sc, metadata=combined_metadata))
+                chunk_text = f"[Source: SRKR {page_title}]\n\n{sc}"
+                final_chunks.append(Document(page_content=chunk_text, metadata=combined_metadata))
                 
     print(f" -> Generated {len(final_chunks)} perfectly sized Markdown chunks.")
     return final_chunks

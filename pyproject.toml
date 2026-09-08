@@ -35,3 +35,8 @@ url = "https://download.pytorch.org/whl/cpu"
 [tool.pyright]
 include = ["."]
 extraPaths = ["."]
+
+[tool.pyrefly]
+project-includes = ["."]
+search-path = ["."]
+
