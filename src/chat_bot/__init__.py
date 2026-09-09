@@ -24,7 +24,14 @@ def main() -> None:
         "-k",
         type=int,
         default=20,
-        help="Number of chunks to retrieve (default: 20).",
+        help="Number of initial candidate chunks to retrieve from Qdrant (default: 20).",
+    )
+    parser.add_argument(
+        "--top-n",
+        "-n",
+        type=int,
+        default=5,
+        help="Number of top precision chunks to keep after Jina re-ranking (default: 5).",
     )
 
     args = parser.parse_args()
@@ -33,11 +40,11 @@ def main() -> None:
     try:
         if args.query:
             # One-shot mode
-            pipeline.run(query=args.query, top_k=args.top_k)
+            pipeline.run(query=args.query, top_k=args.top_k, top_n=args.top_n)
         else:
             # Interactive mode
             print("\n" + "=" * 65)
-            print("  SRKR Engineering College RAG Chatbot (Interactive Mode)")
+            print("  SRKR Engineering College RAG Chatbot (Two-Pass Reranking Mode)")
             print("  Type your question below, or type 'exit' / 'quit' to end.")
             print("=" * 65 + "\n")
 
@@ -50,7 +57,7 @@ def main() -> None:
                         print("Exiting. Goodbye!")
                         break
 
-                    pipeline.run(query=query, top_k=args.top_k)
+                    pipeline.run(query=query, top_k=args.top_k, top_n=args.top_n)
 
                 except KeyboardInterrupt:
                     print("\nSession ended.")

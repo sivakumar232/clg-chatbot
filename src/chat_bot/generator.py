@@ -42,7 +42,7 @@ class LLMGenerator:
         Assembles context from retrieved chunks and constructs the prompt.
         """
         print("=" * 60)
-        print("  STEP 3: Context & Prompt Assembly")
+        print("  STEP 4: Context & Prompt Assembly (After Re-Ranking)")
         print("=" * 60)
 
         context_blocks = []
@@ -53,7 +53,7 @@ class LLMGenerator:
         joined_context = "\n".join(context_blocks)
         total_chars = len(joined_context)
 
-        print(f"  • Assembled {len(chunks)} context blocks ({total_chars:,} characters).")
+        print(f"  • Assembled {len(chunks)} reranked context blocks ({total_chars:,} characters).")
         print(f"  • Grounding instructions and system prompt applied.\n")
 
         user_content = (
@@ -74,7 +74,7 @@ class LLMGenerator:
         prompt = self.build_prompt(query, chunks)
 
         print("=" * 60)
-        print("  STEP 4: Generation with Fallback (Groq ──► Gemini)")
+        print("  STEP 5: Generation with Fallback (Groq ──► Gemini)")
         print("=" * 60)
 
         # 1. Attempt Groq
