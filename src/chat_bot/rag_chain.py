@@ -3,7 +3,13 @@ from typing import Any, Dict, List, Optional
 from .retriever import HybridRetriever, RetrievedChunk
 from .reranker import JinaReranker
 from .generator import LLMGenerator
+import logfire
 
+
+logfire.configure(
+    service_name="rag_pipeline",
+    send_to_logfire=True,
+)
 
 class RAGPipeline:
     """
@@ -30,6 +36,7 @@ class RAGPipeline:
         self.reranker  = JinaReranker()
         self.generator = LLMGenerator()
 
+    @logfire.instrument("RAG Pipeline Execution", extract_args=False)
     def run(
         self,
         query:        str,

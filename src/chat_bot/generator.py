@@ -1,7 +1,9 @@
 import os
 import sys
+import time
 from pathlib import Path
 from typing import List, Tuple
+import logfire
 
 # Ensure project root is importable (for config and Ingestion)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -24,8 +26,6 @@ RULES:
 5. List the sources you referenced at the end under a '### Sources' heading.
 """
 
-
-import time
 
 class LLMGenerator:
     """
@@ -66,6 +66,7 @@ class LLMGenerator:
         )
         return user_content
 
+    @logfire.instrument("Pass 4: LLM Answer Generation", extract_args=False)
     def generate(self, query: str, chunks: List[RetrievedChunk]) -> Tuple[str, str]:
         """
         Generates response using Groq with fallback to Google Gemini.
