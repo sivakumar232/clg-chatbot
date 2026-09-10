@@ -20,7 +20,7 @@ from typing import List
 import logfire
 from rank_bm25 import BM25Okapi
 
-from .models import RetrievedChunk
+from app.models import RetrievedChunk
 
 
 # ── Tokenizer ──────────────────────────────────────────────────────────────

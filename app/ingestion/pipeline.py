@@ -34,14 +34,14 @@ from qdrant_client.models import (
 # reduce the chunks complete ingestions 
 from config import settings
 
-from Ingestion.loaders.md_loader import load_markdown_files
-from Ingestion.loaders.pdf_loader import load_pdf_files
+from app.ingestion.loaders.md_loader import load_markdown_files
+from app.ingestion.loaders.pdf_loader import load_pdf_files
 
-from Ingestion.processor import process_documents
+from app.ingestion.processor import process_documents
 
-from Ingestion.chunking.chunker import chunk_documents
+from app.ingestion.chunking.chunker import chunk_documents
 
-from Ingestion.embedder import (
+from app.services.retrieval.embedding import (
     JinaEmbedder,
     EMBEDDING_DIM,
 )

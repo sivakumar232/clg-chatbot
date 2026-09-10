@@ -28,6 +28,7 @@ class JinaEmbedder:
         keys = (
             os.getenv("JINA_API_KEYS")
             or os.getenv("JINA_API_KEY")
+            or getattr(settings, "JINA_API_KEY", "")
             or ""
         )
 

@@ -26,12 +26,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import settings
-from Ingestion.embedder import JinaEmbedder
-from Ingestion.pipeline import get_qdrant_client, get_production_collection_name
+from app.services.retrieval.embedding import JinaEmbedder
+from app.ingestion.pipeline import get_qdrant_client, get_production_collection_name
 
-from .models     import RetrievedChunk
+from app.models import RetrievedChunk
 from .bm25_search import bm25_rank
-from .rrf         import rrf_fuse
+from .rrf import rrf_fuse
 
 
 class HybridRetriever:

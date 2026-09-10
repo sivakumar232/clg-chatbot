@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import settings
-from .models import RetrievedChunk
+from app.models import RetrievedChunk
 
 RERANK_URL = "https://api.jina.ai/v1/rerank"
 DEFAULT_MODEL = "jina-reranker-v2-base-multilingual"
