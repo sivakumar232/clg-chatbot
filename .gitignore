@@ -13,6 +13,7 @@ env/
 
 # Data Directories (Ignore scraped data)
 Data/
+docs/
 *.log
 
 # IDEs and Editors

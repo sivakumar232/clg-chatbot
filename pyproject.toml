@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "sivakumar232", email = "sivakumarr3105@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "dotenv>=0.9.9",
@@ -20,6 +20,11 @@ dependencies = [
     "qdrant-client>=1.19.0",
     "requests>=2.34.2",
     "sentence-transformers>=6.0.1",
+    "pysbd>=0.3.4",
+    "tiktoken>=0.14.0",
+    "groq>=1.7.0",
+    "rank-bm25>=0.2.2",
+    "logfire>=5.0.0",
 ]
 
 [project.scripts]
@@ -29,8 +34,13 @@ chat-bot = "chat_bot:main"
 requires = ["uv_build>=0.12.2,<0.13.0"]
 build-backend = "uv_build"
 
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
 [[tool.uv.index]]
+name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+
 
 [tool.pyright]
 include = ["."]
