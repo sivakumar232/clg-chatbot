@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import settings
-from .models import RetrievedChunk
+from app.models import RetrievedChunk
 
 
 SYSTEM_PROMPT = """You are an official AI academic advisor for SRKR Engineering College (Autonomous), Bhimavaram.
@@ -92,7 +92,7 @@ class LLMGenerator:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.2,
-                    max_tokens=1024,
+                    max_tokens=768,
                 )
                 answer = response.choices[0].message.content or ""
                 print(f"  ✓ Answer generated successfully via Groq ({self.groq_model}).\n")

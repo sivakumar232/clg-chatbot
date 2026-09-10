@@ -1,8 +1,10 @@
 import time
 from typing import Any, Dict, List, Optional
-from .retriever import HybridRetriever, RetrievedChunk
-from .reranker import JinaReranker
-from .generator import LLMGenerator
+
+from app.services.retrieval.retriever import HybridRetriever
+from app.services.retrieval.reranker import JinaReranker
+from app.services.generation.generator import LLMGenerator
+from app.models import RetrievedChunk
 import logfire
 
 
