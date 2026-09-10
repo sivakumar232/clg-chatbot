@@ -1,7 +1,23 @@
+# src/chat_bot/retriever.py
+"""
+HybridRetriever — orchestrates the tri-brid retrieval pipeline.
+
+Responsibilities:
+    1. Dense vector search via Qdrant (semantic meaning).
+    2. Calls bm25_search.bm25_rank()  for keyword/exact-match re-ranking.
+    3. Calls rrf.rrf_fuse()           to merge both ranked lists.
+
+Each concern lives in its own module:
+    models.py      → RetrievedChunk data class
+    bm25_search.py → BM25 tokenization + ranking
+    rrf.py         → Reciprocal Rank Fusion
+    retriever.py   → Qdrant dense search + pipeline orchestration  (this file)
+"""
+
 import sys
+import time
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 # Ensure project root is importable (for config and Ingestion)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -12,87 +28,172 @@ from config import settings
 from Ingestion.embedder import JinaEmbedder
 from Ingestion.pipeline import get_qdrant_client, get_production_collection_name
 
-
-@dataclass
-class RetrievedChunk:
-    chunk_id: str
-    score: float
-    text: str
-    metadata: Dict[str, Any]
-    source: str
+from .models     import RetrievedChunk
+from .bm25_search import bm25_rank
+from .rrf         import rrf_fuse
 
 
-class QdrantRetriever:
+class HybridRetriever:
     """
-    Handles dense vector retrieval using Jina Embeddings (1024-d)
-    and Qdrant vector database.
+    Tri-brid retrieval pipeline:
+
+        Dense Vector Search  (Jina v5 1024-d, Qdrant cosine)
+                 +
+        BM25 Keyword Search  (rank_bm25, in-memory over dense candidates)
+                 ↓
+        RRF Fusion           (Reciprocal Rank Fusion, k=60)
+                 ↓
+        Top-K hybrid candidates → passed to Jina Reranker v2
     """
 
-    def __init__(
-        self,
-        collection_name: Optional[str] = None,
-    ):
+    def __init__(self, collection_name: Optional[str] = None):
         self.collection_name = collection_name or get_production_collection_name()
-        self.client = get_qdrant_client()
+        self.client   = get_qdrant_client()
         self.embedder = JinaEmbedder()
 
-    def retrieve(self, query: str, top_k: int = 20) -> List[RetrievedChunk]:
-        """
-        Embeds the query and fetches the top_k most similar chunks from Qdrant.
-        Prints detailed information for each step.
-        """
-        print("\n" + "=" * 60)
-        print("  STEP 1: Embed Query (Jina AI)")
-        print("=" * 60)
-        print(f"  • Query: \"{query}\"")
-        print(f"  • Model: {settings.JINA_EMB_MODEL} (task='retrieval.query')")
+    # ──────────────────────────────────────────────────────────────────────
+    #  Public API
+    # ──────────────────────────────────────────────────────────────────────
 
+    def retrieve(
+        self,
+        query:        str,
+        top_k_dense:  int = 40,
+        top_k_final:  int = 20,
+    ) -> List[RetrievedChunk]:
+        """
+        Run the full hybrid retrieval pipeline for a given query.
+
+        Args:
+            query        : User question.
+            top_k_dense  : Candidate pool size fetched from Qdrant.
+                           Larger pool → BM25 has more candidates to re-rank.
+            top_k_final  : Chunks returned after RRF fusion (input to reranker).
+
+        Returns:
+            List[RetrievedChunk] sorted by RRF score descending.
+        """
+        t0 = time.time()
+        self._print_header(query, top_k_dense, top_k_final)
+
+        # Step 1 — Embed the query
+        t_emb = time.time()
+        print(f"  [STEP 1] Embedding query → {settings.JINA_EMB_MODEL} ...")
         query_vector = self.embedder.embed_query(query)
-        print(f"  ✓ Successfully generated {len(query_vector)}-d dense vector.\n")
+        print(f"  ✓ {len(query_vector)}-d vector embedded in {time.time() - t_emb:.2f}s\n")
 
-        print("=" * 60)
-        print(f"  STEP 2: Dense Vector Search (Qdrant: {self.collection_name})")
-        print("=" * 60)
-        print(f"  • Searching top {top_k} nearest chunks by Cosine similarity...\n")
+        # Step 2 — Dense vector search (Qdrant)
+        t_dense = time.time()
+        print(f"  [STEP 2] Dense search in Qdrant '{self.collection_name}' (top {top_k_dense}) ...")
+        dense_candidates = self._dense_search(query_vector, top_k_dense)
+        print(f"  ✓ {len(dense_candidates)} candidates retrieved in {time.time() - t_dense:.2f}s")
+        self._print_top(dense_candidates, label="Dense", n=3)
 
-        search_results = self.client.query_points(
+        if not dense_candidates:
+            print("  ⚠️  No dense results found. Returning empty.")
+            return []
+
+        # Step 3 — BM25 re-ranking over the same candidates
+        t_bm25 = time.time()
+        print(f"\n  [STEP 3] BM25 keyword rank (rank_bm25) over {len(dense_candidates)} candidates ...")
+        bm25_candidates = bm25_rank(query, dense_candidates)
+        print(f"  ✓ BM25 scored in {time.time() - t_bm25:.4f}s")
+        self._print_top(bm25_candidates, label="BM25", n=3)
+
+        # Step 4 — RRF Fusion: merge dense + BM25 ranked lists
+        t_rrf = time.time()
+        print(f"\n  [STEP 4] RRF Fusion (k=60) — merging dense + BM25 ...")
+        fused  = rrf_fuse([dense_candidates, bm25_candidates], k=60)
+        final  = fused[:top_k_final]
+        print(f"  ✓ Fused {len(fused)} chunks → kept top {len(final)} in {time.time() - t_rrf:.4f}s")
+
+        self._print_summary(final, elapsed=time.time() - t0)
+        return final
+
+    # ──────────────────────────────────────────────────────────────────────
+    #  Qdrant dense search
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _dense_search(
+        self,
+        query_vector: List[float],
+        top_k:        int,
+    ) -> List[RetrievedChunk]:
+        """
+        Queries Qdrant with the embedded query vector using cosine similarity.
+        Returns the top_k nearest chunks with their full payloads.
+        """
+        results = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
             limit=top_k,
             with_payload=True,
         )
 
-        retrieved: List[RetrievedChunk] = []
-
-        print(f"  ✓ Retrieved {len(search_results.points)} chunks:\n")
-
-        for rank, point in enumerate(search_results.points, start=1):
+        chunks: List[RetrievedChunk] = []
+        for point in results.points:
             payload = point.payload or {}
-            text = payload.get("text") or payload.get("page_content") or ""
-            source = (
+            text    = payload.get("text") or payload.get("page_content") or ""
+            source  = (
                 payload.get("source_url")
                 or payload.get("source")
                 or "Unknown Source"
             )
-
-            chunk = RetrievedChunk(
+            chunks.append(RetrievedChunk(
                 chunk_id=str(point.id),
                 score=float(point.score),
                 text=text,
                 metadata=payload,
                 source=str(source),
+            ))
+        return chunks
+
+    # ──────────────────────────────────────────────────────────────────────
+    #  Print helpers
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _print_header(self, query: str, top_k_dense: int, top_k_final: int) -> None:
+        print("\n" + "=" * 65)
+        print("  HYBRID RETRIEVAL — Dense + BM25 + RRF Fusion")
+        print("=" * 65)
+        print(f"  • Query        : \"{query}\"")
+        print(f"  • Dense pool   : top {top_k_dense} from Qdrant")
+        print(f"  • Final output : top {top_k_final} after RRF fusion\n")
+
+    def _print_top(self, chunks: List[RetrievedChunk], label: str, n: int = 3) -> None:
+        """Prints a compact preview of the top-n chunks in a ranked list."""
+        print(f"\n  Top {min(n, len(chunks))} by {label}:")
+        for rank, chunk in enumerate(chunks[:n], start=1):
+            page = (
+                f" (Page {chunk.metadata.get('page') + 1})"
+                if isinstance(chunk.metadata.get("page"), int)
+                else ""
             )
-            retrieved.append(chunk)
+            snippet = chunk.text.replace("\n", " ").strip()[:140]
+            print(f"    [{rank}] Score: {chunk.score:.4f} | {chunk.source}{page}")
+            print(f"        \"{snippet}...\"\n")
 
-            # Terminal print for each chunk
-            page_info = f" (Page {payload.get('page') + 1})" if isinstance(payload.get("page"), int) else ""
-            preview_snippet = text.replace("\n", " ").strip()[:160]
+    def _print_summary(self, final: List[RetrievedChunk], elapsed: float) -> None:
+        """Prints the final ranked table after RRF fusion."""
+        print(f"\n  {'─'*62}")
+        print(f"  HYBRID RETRIEVAL COMPLETE in {elapsed:.2f}s")
+        print(f"  {'─'*62}")
+        print(f"  {'Rank':<5} {'RRF Score':<12} {'Dense Score':<14} Source")
+        print(f"  {'─'*62}")
+        for rank, chunk in enumerate(final, start=1):
+            dense_score = chunk.metadata.get("dense_score", 0.0)
+            src         = chunk.source[-52:] if len(chunk.source) > 52 else chunk.source
+            print(f"  [{rank:<3}] {chunk.score:<12.6f} {dense_score:<14.4f} {src}")
+        print(f"  {'─'*62}\n")
 
-            print(f"  [{rank}] Score: {chunk.score:.4f} | Source: {chunk.source}{page_info}")
-            print(f"      Snippet: \"{preview_snippet}...\"\n")
-
-        return retrieved
+    # ──────────────────────────────────────────────────────────────────────
+    #  Cleanup
+    # ──────────────────────────────────────────────────────────────────────
 
     def close(self):
-        """Closes the embedder session."""
+        """Close persistent Jina embedder HTTP session."""
         self.embedder.close()
+
+
+# Backward-compatibility alias so rag_chain.py and reranker.py still work
+QdrantRetriever = HybridRetriever

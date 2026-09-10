@@ -23,6 +23,7 @@ dependencies = [
     "pysbd>=0.3.4",
     "tiktoken>=0.14.0",
     "groq>=1.7.0",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]

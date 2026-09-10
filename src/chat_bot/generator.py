@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import settings
-from .retriever import RetrievedChunk
+from .models import RetrievedChunk
 
 
 SYSTEM_PROMPT = """You are an official AI academic advisor for SRKR Engineering College (Autonomous), Bhimavaram.
