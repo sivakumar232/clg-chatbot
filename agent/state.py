@@ -72,6 +72,10 @@ class AgentState(TypedDict, total=False):
     max_retrieval_retries: int
     reformulated_query: Optional[str]
     degraded_reason: Optional[str]
+    missing_sub_queries: List[str]       # Sub-queries that lacked supporting evidence
+    contradictions: List[str]            # Non-blocking detected factual contradictions
+    pruned_chunks: List[RetrievedChunk]  # Chunks after redundancy / diversity pruning
+
 
     # ── GENERATION & GUARD ───────────────────────────────────────────────────
     draft_answer: str
