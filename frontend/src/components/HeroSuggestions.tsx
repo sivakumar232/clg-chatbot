@@ -48,7 +48,7 @@ const STARTER_CARDS = [
     description:
       "Operating hours, digital library access, specialized computing labs, and centers.",
     prompt:
-      "What facilities, digital resources, and timings does SRKR Central Library offer?",
+      "What facilities, digital resources, and timings does the Central Library offer?",
     icon: Building2,
   },
 ];
@@ -60,13 +60,13 @@ export function HeroSuggestions({ onSelect, disabled }: HeroSuggestionsProps) {
       <div className="mb-4">
         <ShimmerBadge>
           <Sparkles className="w-3 h-3 text-zinc-300 inline-block mr-1" />
-          SRKR Intelligence • LangGraph RAG
+          Campus Intelligence • LangGraph RAG
         </ShimmerBadge>
       </div>
 
       {/* Hero Headline */}
       <h2 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-zinc-100 max-w-xl">
-        What would you like to explore about SRKR?
+        What would you like to explore?
       </h2>
 
       {/* Subtitle */}

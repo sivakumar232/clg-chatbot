@@ -54,8 +54,8 @@ export default function Home() {
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-            Explore SRKR Engineering College <br className="hidden sm:inline" />
-            <span className="text-[#800020]">Curriculum & Campus Knowledge</span>
+            Explore Campus Academic <br className="hidden sm:inline" />
+            <span className="text-[#800020]">Curriculum & Department Knowledge</span>
           </h1>
 
           <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
@@ -113,7 +113,7 @@ export default function Home() {
               title: "Campus & Labs",
               desc: "Library facilities, digital subscriptions, computing center, and college hours.",
               prompt:
-                "What facilities, books, and working hours does the SRKR Central Library have?",
+                "What facilities, books, and working hours does the Central Library have?",
               icon: Building2,
             },
           ].map((item, idx) => {
@@ -152,10 +152,10 @@ export default function Home() {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">
-                Sagi Rama Krishnam Raju Engineering College (SRKREC)
+                Autonomous College Academic & Research Center
               </h3>
               <p className="text-xs text-slate-600 mt-0.5">
-                Autonomous Institution • Affiliated to JNTUK Kakinada • Approved by AICTE, New Delhi
+                Autonomous Engineering Institution • Approved by AICTE • Accredited Programs
               </p>
             </div>
           </div>

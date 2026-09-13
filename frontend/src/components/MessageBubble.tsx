@@ -16,8 +16,21 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
+  // Clean raw LLM formatting glitches (e.g. manual trailing Sources lists or robotic disclaimers)
+  let cleanContent = message.content || "";
+  if (!isUser && cleanContent) {
+    cleanContent = cleanContent
+      // Remove manual Sources: lists at bottom (since UI handles sources array)
+      .replace(/\n*###?\s*Sources:?[\s\S]*$/i, "")
+      .replace(/\n*Sources:?\s*(\[?https?:\/\/[^\n]+\]?\s*)+$/i, "")
+      // Remove robotic introductory disclaimers (already indicated in degraded alert banner)
+      .replace(/^Notice:\s*Official college records are incomplete[^\n]*\n*/i, "")
+      .replace(/^Based on the available documentation[^\n]*,?\s*/i, "")
+      .trim();
+  }
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
+    navigator.clipboard.writeText(cleanContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -48,7 +61,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {/* Meta Label */}
         <div className="flex items-center gap-1.5 mb-1 px-1">
           <span className="text-[11px] font-semibold text-slate-500">
-            {isUser ? "You" : "SRKR Advisor"}
+            {isUser ? "You" : "Campus Advisor"}
           </span>
           {!isUser && message.cacheHit && (
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium">
@@ -70,7 +83,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <div className="mb-2.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                <strong>Notice:</strong> Answering with reduced confidence based on nearest available records.
+                <strong>Notice:</strong> Answering based on closest verified available records.
               </span>
             </div>
           )}
@@ -84,7 +97,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
 
           {/* Markdown Content */}
-          {message.content ? (
+          {cleanContent ? (
             <div
               className={`prose prose-sm max-w-none break-words leading-relaxed space-y-2 ${
                 isUser ? "text-white prose-invert" : "text-slate-800"
@@ -93,8 +106,23 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
+                  h1: ({ ...props }) => (
+                    <h1 className="text-base font-bold text-slate-900 mt-3.5 mb-1.5 border-b border-slate-200/80 pb-1" {...props} />
+                  ),
+                  h2: ({ ...props }) => (
+                    <h2 className="text-sm font-bold text-slate-900 mt-3 mb-1" {...props} />
+                  ),
+                  h3: ({ ...props }) => (
+                    <h3 className="text-xs font-bold text-[#800020] uppercase tracking-wider mt-3 mb-1" {...props} />
+                  ),
+                  h4: ({ ...props }) => (
+                    <h4 className="text-xs font-semibold text-slate-800 mt-2 mb-1" {...props} />
+                  ),
+                  strong: ({ ...props }) => (
+                    <strong className={isUser ? "font-bold text-white" : "font-semibold text-slate-900"} {...props} />
+                  ),
                   table: ({ ...props }) => (
-                    <div className="my-2.5 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                    <div className="my-2.5 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-2xs">
                       <table
                         className="w-full text-left text-xs border-collapse divide-y divide-slate-200"
                         {...props}
@@ -134,10 +162,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                     );
                   },
                   ul: ({ ...props }) => (
-                    <ul className="list-disc list-outside ml-4 space-y-1 my-1.5" {...props} />
+                    <ul className="list-disc list-outside ml-4 space-y-1 my-2" {...props} />
                   ),
                   ol: ({ ...props }) => (
-                    <ol className="list-decimal list-outside ml-4 space-y-1 my-1.5" {...props} />
+                    <ol className="list-decimal list-outside ml-4 space-y-1 my-2" {...props} />
+                  ),
+                  li: ({ ...props }) => (
+                    <li className="leading-relaxed text-slate-700" {...props} />
                   ),
                   a: ({ ...props }) => (
                     <a
@@ -151,10 +182,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                       {...props}
                     />
                   ),
-                  p: ({ ...props }) => <p className="mb-1.5 last:mb-0 leading-relaxed" {...props} />,
+                  p: ({ ...props }) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
                 }}
               >
-                {message.content}
+                {cleanContent}
               </ReactMarkdown>
             </div>
           ) : null}
@@ -165,7 +196,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
 
           {/* Quick Copy Button */}
-          {!isUser && message.content && (
+          {!isUser && cleanContent && (
             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={handleCopy}

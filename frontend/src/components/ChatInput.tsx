@@ -14,7 +14,7 @@ export function ChatInput({
   onSend,
   onStop,
   isLoading,
-  placeholder = "Ask about SRKR syllabus, faculty, regulations, or credits...",
+  placeholder = "Ask about syllabus, faculty, regulations, or credits...",
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);

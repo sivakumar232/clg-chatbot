@@ -28,19 +28,19 @@ def _build_direct_response(query: str, intent: Dict[str, Any]) -> str:
     # Out-of-scope rejection
     if "out_of_scope" in category or any(w in q_lower for w in ["biryani", "recipe", "cricket", "movie", "weather", "song", "essay"]):
         return (
-            "I am the official AI Academic Advisor for **SRKR Engineering College (Autonomous), Bhimavaram**.\n\n"
-            "I can only assist with college-related queries, such as:\n"
-            "- Academic regulations (R20, R23, R24) and course syllabi\n"
+            "I am the official AI Academic Advisor and Campus Assistant for the college.\n\n"
+            "I can assist with college-related queries, such as:\n"
+            "- Academic regulations and course syllabi\n"
             "- Departmental curriculum, labs, and elective subjects\n"
             "- Faculty directories and HOD contact information\n"
             "- College admissions, examinations, and placement statistics\n\n"
-            "Please ask a question related to SRKR Engineering College!"
+            "Please ask a question related to college academics or campus facilities!"
         )
 
     # Conversational greeting
     return (
-        "Hello! I am your AI Academic Advisor for **SRKR Engineering College (Autonomous)**.\n\n"
-        "How can I assist you with your academic curriculum, syllabus details, faculty contacts, or college regulations today?"
+        "Hello! I am your AI Academic Advisor and Campus Assistant.\n\n"
+        "How can I assist you with your academic curriculum, syllabus details, faculty contacts, or regulations today?"
     )
 
 
@@ -90,12 +90,8 @@ def responder_node(state: AgentState) -> AgentState:
             else:
                 sources.append(src)
 
-    # Format sources footer if sources exist and aren't already formatted in the draft
+    # Clean final answer (sources are handled by UI components via sources array)
     final_answer = draft.strip()
-    if sources and "### Sources" not in final_answer:
-        source_bullets = "\n".join(f"- {s}" for s in sources)
-        final_answer = f"{final_answer}\n\n### Sources:\n{source_bullets}"
-
     provider = state.get("provider", "Groq")
 
     return {

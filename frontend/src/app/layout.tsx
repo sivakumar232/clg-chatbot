@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SRKR Engineering College - AI Campus Assistant",
+  title: "Campus AI Assistant - Academic & Student Advisor",
   description:
-    "AI-powered multi-agent campus assistant for syllabus, faculty, regulations, and admissions at SRKR Engineering College (Autonomous).",
+    "AI-powered multi-agent campus assistant for syllabus, faculty, regulations, and academic records.",
 };
 
 export default function RootLayout({

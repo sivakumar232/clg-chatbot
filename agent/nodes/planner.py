@@ -20,7 +20,7 @@ from config import settings
 from agent.state import AgentState, RouteType, QueryType
 
 
-PLANNER_SYSTEM_PROMPT = """You are the master Query Planner for SRKR Engineering College AI Academic Assistant.
+PLANNER_SYSTEM_PROMPT = """You are the master Query Planner for the College AI Academic Assistant.
 Analyze the user's latest query along with any chat history, and output a strictly valid JSON execution plan.
 
 TASKS:
@@ -29,8 +29,8 @@ TASKS:
    - If already self-contained, keep it unchanged.
 
 2. Route Classification:
-   - "direct": Conversational greetings (e.g. "hi", "hello", "how are you"), compliments, or queries totally out-of-scope of SRKR Engineering College (e.g., general world history, cooking, cricket, politics).
-   - "needs_retrieval": Any query seeking SRKR Engineering College information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty, HODs, administration, fees, exams, placements, admissions, campus facilities, clubs).
+   - "direct": Conversational greetings (e.g. "hi", "hello", "how are you"), compliments, or queries totally out-of-scope of college academics (e.g., general world history, cooking, cricket, politics).
+   - "needs_retrieval": Any query seeking college information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty, HODs, administration, fees, exams, placements, admissions, campus facilities, clubs).
 
 3. Query Type:
    - "single_query": Focused question on one entity or topic.

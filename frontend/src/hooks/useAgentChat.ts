@@ -11,7 +11,7 @@ export function useAgentChat() {
       id: "welcome-msg",
       role: "assistant",
       content:
-        "Hello! I am your **SRKR Engineering College Agentic RAG Assistant**.\n\nI can assist you with:\n- 📚 **Syllabus & Regulations** (R23, R20, course codes, credits)\n- 👨‍🏫 **Faculty & HOD Directory** across departments\n- 🏢 **Campus Facilities & Labs**\n- 🎯 **Placements, Admissions & Regulations**\n\nHow can I help you today?",
+        "Hello! I am your **Campus AI Academic Assistant**.\n\nI can assist you with:\n- 📚 **Syllabus & Regulations** (Curriculum structure, course codes, credits)\n- 👨‍🏫 **Faculty & Department Directory**\n- 🏢 **Campus Facilities & Labs**\n- 🎯 **Placements, Admissions & Regulations**\n\nHow can I help you today?",
       createdAt: Date.now(),
     },
   ]);
@@ -40,7 +40,7 @@ export function useAgentChat() {
         steps: [
           {
             node: "init",
-            label: "Connecting to SRKR Agent State Machine...",
+            label: "Connecting to Campus Agent State Machine...",
             status: "active",
             timestamp: Date.now(),
           },
@@ -145,7 +145,7 @@ export function useAgentChat() {
                       ...msg,
                       content: event.answer || "No response generated.",
                       sources: event.sources || [],
-                      provider: event.provider || "SRKR Advisor",
+                      provider: event.provider || "Campus Advisor",
                       degraded: !!event.degraded,
                       isStreaming: false,
                       steps: completedSteps,
@@ -204,7 +204,7 @@ export function useAgentChat() {
         id: "welcome-msg",
         role: "assistant",
         content:
-          "Conversation reset. How can I assist you with SRKR College information?",
+          "Conversation reset. How can I assist you with college academic information?",
         createdAt: Date.now(),
       },
     ]);

@@ -66,7 +66,7 @@ export function ChatWidget({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold tracking-tight">
-                    SRKR AI Assistant
+                    Campus AI Assistant
                   </h3>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
                     RAG v2.0
@@ -132,7 +132,7 @@ export function ChatWidget({
 
             {/* Footer Note */}
             <div className="text-center text-[10px] text-slate-400 font-mono select-none">
-              SRKR Engineering College • Autonomous • RAG System
+              College Academic Assistant • Autonomous Knowledge Engine
             </div>
           </div>
         </div>
@@ -144,7 +144,7 @@ export function ChatWidget({
         {!isOpen && showTooltip && (
           <div className="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-white text-slate-800 text-xs font-medium rounded-2xl shadow-xl border border-slate-200/90 animate-bounce">
             <Sparkles className="w-3.5 h-3.5 text-[#800020]" />
-            <span>Ask SRKR Campus AI</span>
+            <span>Ask Campus AI</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -161,7 +161,7 @@ export function ChatWidget({
         <button
           onClick={onToggle}
           title={isOpen ? "Close AI Assistant" : "Open AI Assistant"}
-          aria-label="Toggle SRKR AI Assistant"
+          aria-label="Toggle Campus AI Assistant"
           className="relative w-14 h-14 rounded-full bg-[#800020] hover:bg-[#6b001b] text-white flex items-center justify-center shadow-xl hover:shadow-2xl active:scale-95 transition-all duration-200 cursor-pointer group"
         >
           {isOpen ? (

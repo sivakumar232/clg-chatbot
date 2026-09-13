@@ -55,7 +55,7 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
 
     final_answer = ""
     final_sources = []
-    final_provider = "SRKR Advisor"
+    final_provider = "Campus Advisor"
     final_degraded = False
 
     try:

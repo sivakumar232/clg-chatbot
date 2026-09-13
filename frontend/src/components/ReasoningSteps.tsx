@@ -37,7 +37,7 @@ function getFriendlyPhase(node: string) {
     case "reranker":
       return {
         stage: "Searching Records",
-        detail: "Searching SRKR syllabus & regulations",
+        detail: "Searching curriculum & regulations",
         icon: Search,
       };
     case "validator":
@@ -83,7 +83,7 @@ export function ReasoningSteps({ steps, isStreaming }: ReasoningStepsProps) {
     },
     {
       key: "searching",
-      title: "SRKR Knowledge Base Retrieval",
+      title: "Campus Knowledge Base Retrieval",
       desc: "Retrieved relevant official syllabus documents, faculty rosters, and regulations",
       isDone: steps.some(
         (s) =>

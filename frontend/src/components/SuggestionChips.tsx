@@ -26,7 +26,7 @@ const SUGGESTIONS = [
   {
     icon: Building2,
     label: "Library & Labs",
-    prompt: "What facilities and timings does SRKR Central Library have?",
+    prompt: "What facilities and timings does the Central Library have?",
   },
 ];
 

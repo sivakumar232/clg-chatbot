@@ -33,19 +33,19 @@ export function Navbar({ onOpenChat, isChatOpen }: NavbarProps) {
         {/* Left Branding */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#800020] text-white flex items-center justify-center font-bold text-sm tracking-wider shadow-sm select-none">
-            SRKR
+            AI
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-slate-900 tracking-tight leading-none">
-                S.R.K.R. Engineering College
+                Campus Academic Portal
               </h1>
               <span className="hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full bg-[#800020]/10 text-[#800020] font-semibold border border-[#800020]/20">
                 Autonomous
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Affiliated to JNTUK • Accredited NAAC A+ • Bhimavaram
+              Academic Regulations • Curriculum & Faculty Directory
             </p>
           </div>
         </div>
