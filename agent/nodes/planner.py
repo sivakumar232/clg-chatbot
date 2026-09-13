@@ -20,7 +20,7 @@ from config import settings
 from agent.state import AgentState, RouteType, QueryType
 
 
-PLANNER_SYSTEM_PROMPT = """You are the master Query Planner for SRKR Engineering College AI Academic Assistant.
+PLANNER_SYSTEM_PROMPT = """You are the master Query Planner for the College AI Academic Assistant.
 Analyze the user's latest query along with any chat history, and output a strictly valid JSON execution plan.
 
 TASKS:
@@ -29,8 +29,8 @@ TASKS:
    - If already self-contained, keep it unchanged.
 
 2. Route Classification:
-   - "direct": Conversational greetings (e.g. "hi", "hello", "how are you"), compliments, or queries totally out-of-scope of SRKR Engineering College (e.g., general world history, cooking, cricket, politics).
-   - "needs_retrieval": Any query seeking SRKR Engineering College information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty, HODs, administration, fees, exams, placements, admissions, campus facilities, clubs).
+   - "direct": Conversational greetings (e.g. "hi", "hello", "how are you"), compliments, or queries totally out-of-scope of college academics (e.g., general world history, cooking, cricket, politics).
+   - "needs_retrieval": Any query seeking college information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty, HODs, administration, fees, exams, placements, admissions, campus facilities, clubs).
 
 3. Query Type:
    - "single_query": Focused question on one entity or topic.
@@ -81,70 +81,76 @@ def _format_history_context(chat_history: List[Dict[str, str]]) -> str:
 
 
 def _call_groq_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
-    """Calls Groq with strict JSON output format and records token metrics in Logfire."""
-    if not settings.GROQ_API_KEY:
+    """Calls Groq with strict JSON output format and key failover across bucket."""
+    keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
+    if not keys:
         return None
 
-    try:
-        from groq import Groq
-        with logfire.span("Groq Planner LLM Inference", model=settings.GROQ_MODEL) as llm_span:
-            client = Groq(api_key=settings.GROQ_API_KEY)
-            response = client.chat.completions.create(
-                model=settings.GROQ_MODEL,
-                messages=[
-                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt_text},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.0,
-                max_tokens=512,
-            )
-            
-            # Record token usage metrics if returned by Groq
-            if hasattr(response, "usage") and response.usage:
-                llm_span.set_attribute("gen_ai.usage.prompt_tokens", response.usage.prompt_tokens)
-                llm_span.set_attribute("gen_ai.usage.completion_tokens", response.usage.completion_tokens)
-                llm_span.set_attribute("gen_ai.usage.total_tokens", response.usage.total_tokens)
+    from groq import Groq
+    for key in keys:
+        try:
+            with logfire.span("Groq Planner LLM Inference", model=settings.GROQ_MODEL) as llm_span:
+                client = Groq(api_key=key)
+                response = client.chat.completions.create(
+                    model=settings.GROQ_MODEL,
+                    messages=[
+                        {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt_text},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.0,
+                    max_tokens=512,
+                )
+                
+                # Record token usage metrics if returned by Groq
+                if hasattr(response, "usage") and response.usage:
+                    llm_span.set_attribute("gen_ai.usage.prompt_tokens", response.usage.prompt_tokens)
+                    llm_span.set_attribute("gen_ai.usage.completion_tokens", response.usage.completion_tokens)
+                    llm_span.set_attribute("gen_ai.usage.total_tokens", response.usage.total_tokens)
 
-            content = response.choices[0].message.content or ""
-            parsed = json.loads(content)
-            llm_span.set_attribute("route", parsed.get("route"))
-            return parsed
+                content = response.choices[0].message.content or ""
+                parsed = json.loads(content)
+                llm_span.set_attribute("route", parsed.get("route"))
+                return parsed
 
-    except Exception as e:
-        logfire.warn(f"Groq planner call failed: {e}", exc_info=True)
-        return None
+        except Exception as e:
+            logfire.warn("Groq planner key failed: {err}", err=str(e), exc_info=True)
+            continue
+    return None
 
 
 def _call_gemini_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
-    """Fallback to Google Gemini for JSON planning with Logfire span recording."""
-    if not settings.GEMINI_API_KEY:
+    """Fallback to Google Gemini for JSON planning with key failover across bucket."""
+    keys = settings.GEMINI_API_KEYS or ([settings.GEMINI_API_KEY] if settings.GEMINI_API_KEY else [])
+    if not keys:
         return None
 
-    try:
-        from google import genai
-        with logfire.span("Gemini Planner Fallback Inference", model=settings.GEMINI_MODEL) as llm_span:
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            combined_prompt = f"{PLANNER_SYSTEM_PROMPT}\n\nUser Input:\n{prompt_text}\n\nRespond with ONLY valid JSON."
-            resp = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=combined_prompt,
-            )
-            raw_text = (resp.text or "").strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
+    from google import genai
+    for key in keys:
+        try:
+            with logfire.span("Gemini Planner Fallback Inference", model=settings.GEMINI_MODEL) as llm_span:
+                client = genai.Client(api_key=key)
+                combined_prompt = f"{PLANNER_SYSTEM_PROMPT}\n\nUser Input:\n{prompt_text}\n\nRespond with ONLY valid JSON."
+                resp = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=combined_prompt,
+                )
+                raw_text = (resp.text or "").strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:]
+                if raw_text.startswith("```"):
+                    raw_text = raw_text[3:]
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3]
 
-            parsed = json.loads(raw_text.strip())
-            llm_span.set_attribute("route", parsed.get("route"))
-            return parsed
+                parsed = json.loads(raw_text.strip())
+                llm_span.set_attribute("route", parsed.get("route"))
+                return parsed
 
-    except Exception as e:
-        logfire.warn(f"Gemini planner fallback failed: {e}", exc_info=True)
-        return None
+        except Exception as e:
+            logfire.warn("Gemini planner key failed: {err}", err=str(e), exc_info=True)
+            continue
+    return None
 
 
 def planner_node(state: AgentState) -> AgentState:

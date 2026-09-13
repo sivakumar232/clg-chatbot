@@ -23,14 +23,26 @@ from agent.state import AgentState
 from app.models import RetrievedChunk
 
 
-SYSTEM_PROMPT_BASE = """You are the official AI Academic Advisor for SRKR Engineering College (Autonomous), Bhimavaram.
-Your responsibility is to provide accurate, structured, and strictly grounded answers to student and faculty questions.
+SYSTEM_PROMPT_BASE = """You are the official AI Academic Advisor and Campus Assistant for the college.
+Your role is to converse naturally, helpfully, and professionally with students and faculty, delivering accurate, well-structured academic information.
 
-CORE RULES:
-1. Base your answer SOLELY on the provided Context Blocks. Do not extrapolate, assume, or hallucinate facts not present in the text.
-2. Quote specific course codes (e.g. CS3201), credit hours (L-T-P-C), regulations (R20, R23, R24), and committee details whenever present.
-3. Structure your response clearly using markdown headings, bold terms, and bullet points.
-4. When stating a fact, add an in-text source marker matching the context block, e.g. [Source 1] or [Source 2].
+STYLE & PRESENTATION GUIDELINES:
+1. Conversational & Professional Flow:
+   - Speak naturally like an attentive, knowledgeable academic advisor.
+   - Start immediately with a clear, direct answer to the user's question without robotic disclaimers or meta-talk (do NOT say "Notice: Official college records are incomplete..." or "Based on the available documentation...").
+   - Write cleanly with natural transitions.
+
+2. Clean Visual Structure & Markdown:
+   - Organize related details into thematic sections with clean Markdown headings (e.g., `### Laboratory Infrastructure`, `### Computational Facilities`, `### Research & Innovation`).
+   - Leave a blank line before and after each heading.
+   - Format bullet lists cleanly using standard bullet markers (`- `) with a space after each dash. Ensure sub-items and lists have proper line breaks rather than being squashed together.
+   - When presenting structured course data, subject codes, credits, or regulations, format them into clean, well-aligned Markdown TABLES.
+   - Bold key names, lab titles, tools, and technical terms to make the response scannable and visually appealing.
+
+3. Strict Factual Grounding & Clean Text:
+   - Base all statements SOLELY on the provided Context Blocks. Never speculate beyond what is documented.
+   - Do NOT insert distracting in-text tags like [Source 1] or [Source 2] in the body.
+   - Do NOT append a manual "Sources:" URL list at the end of your response, as verified sources are automatically parsed and displayed by the interface.
 """
 
 
@@ -55,11 +67,10 @@ def _build_generator_prompt(
 
     if degraded:
         instructions.append(
-            f"CRITICAL (INCOMPLETE DOCUMENTATION NOTICE):\n"
-            f"- Official college records are incomplete for this query (Reason: {degraded_reason or 'Partial documentation'}).\n"
-            f"- You MUST begin or conclude your answer with an explicit notice:\n"
-            f"  'Notice: Official college records are incomplete regarding this query. The following details are what could be verified from available documentation:'\n"
-            f"- State ONLY what is verified in the context blocks. Do NOT invent missing details."
+            f"INCOMPLETE DOCUMENTATION NOTICE:\n"
+            f"- Information in records is partial (Reason: {degraded_reason or 'Partial documentation'}).\n"
+            f"- State ONLY the facts explicitly verified in the context blocks. Do NOT invent missing details.\n"
+            f"- Do NOT output disclaimers or phrases like 'Notice: Official college records are incomplete...'. Present verified facts directly and cleanly."
         )
 
     if contradictions:
@@ -67,59 +78,76 @@ def _build_generator_prompt(
         instructions.append(
             f"DOCUMENTATION CONFLICT DETECTED:\n"
             f"- {contra_str}\n"
-            f"- Present BOTH conflicting values transparently to the student (e.g. 'One official record states X, while another states Y')."
+            f"- Present conflicting records transparently (e.g., 'One official document notes X, while another lists Y')."
         )
 
     if guard_feedback:
         instructions.append(
             f"GUARD REVISION FEEDBACK (Fix previous draft):\n"
-            f"- The previous draft was flagged: {guard_feedback}\n"
-            f"- Make sure your revised answer strictly complies and eliminates ungrounded claims."
+            f"- {guard_feedback}\n"
+            f"- Correct any unverified claims or course codes strictly."
         )
 
-    special_instructions = "\n\n".join(instructions)
-    special_section = f"\n\nSPECIAL GUIDELINES:\n{special_instructions}\n" if special_instructions else ""
+    special_section = ""
+    if instructions:
+        special_section = "\nSPECIAL INSTRUCTIONS:\n" + "\n".join(f"- {inst}" for inst in instructions) + "\n"
 
     prompt = (
-        f"Context Information:\n"
+        f"CONTEXT BLOCKS:\n"
         f"====================\n"
         f"{joined_context}\n"
         f"====================\n"
         f"{special_section}\n"
-        f"Student/User Query: \"{query}\"\n\n"
-        f"Please provide your official grounded answer based strictly on the context blocks above."
+        f"Student/User Question: \"{query}\"\n\n"
+        f"Please provide a well-structured response using clean markdown headings (### ), bullet points, and tables where suitable. Jump straight into the verified information without meta-disclaimers or manual source URLs."
     )
     return prompt
 
 
 def _call_groq_generator(prompt: str) -> Tuple[str, str]:
-    """Generates response via Groq."""
+    """Generates response via Groq with automatic key failover across bucket."""
     from groq import Groq
-    client = Groq(api_key=settings.GROQ_API_KEY)
-    response = client.chat.completions.create(
-        model=settings.GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT_BASE},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
-        max_tokens=896,
-    )
-    answer = response.choices[0].message.content or ""
-    return answer, f"Groq ({settings.GROQ_MODEL})"
+    keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
+    last_err = None
+    for key in keys:
+        try:
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_BASE},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=896,
+            )
+            answer = response.choices[0].message.content or ""
+            return answer, f"Groq ({settings.GROQ_MODEL})"
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err or RuntimeError("No working Groq API keys available")
 
 
 def _call_gemini_generator(prompt: str) -> Tuple[str, str]:
-    """Generates response via Google Gemini fallback."""
+    """Generates response via Google Gemini fallback with automatic key failover across bucket."""
     from google import genai
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    keys = settings.GEMINI_API_KEYS or ([settings.GEMINI_API_KEY] if settings.GEMINI_API_KEY else [])
     combined = f"{SYSTEM_PROMPT_BASE}\n\n{prompt}"
-    resp = client.models.generate_content(
-        model=settings.GEMINI_MODEL,
-        contents=combined,
-    )
-    answer = resp.text or ""
-    return answer, f"Gemini ({settings.GEMINI_MODEL})"
+    last_err = None
+    for key in keys:
+        try:
+            client = genai.Client(api_key=key)
+            resp = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=combined,
+            )
+            answer = resp.text or ""
+            return answer, f"Gemini ({settings.GEMINI_MODEL})"
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err or RuntimeError("No working Gemini API keys available")
 
 
 def generator_node(state: AgentState) -> AgentState:
@@ -155,7 +183,7 @@ def generator_node(state: AgentState) -> AgentState:
             try:
                 answer, provider = _call_groq_generator(prompt)
             except Exception as e:
-                logfire.warn(f"Groq generator failed: {e}", exc_info=True)
+                logfire.warn("Groq generator failed: {err}", err=str(e), exc_info=True)
                 print(f"  ⚠️ Groq generation failed: {e}. Switching to Gemini fallback...")
 
         # 2. Fallback: Gemini
@@ -163,7 +191,7 @@ def generator_node(state: AgentState) -> AgentState:
             try:
                 answer, provider = _call_gemini_generator(prompt)
             except Exception as e:
-                logfire.error(f"Gemini generator fallback failed: {e}", exc_info=True)
+                logfire.error("Gemini generator fallback failed: {err}", err=str(e), exc_info=True)
                 raise RuntimeError(f"All LLM generation providers failed: {e}")
 
         elapsed = time.time() - t0

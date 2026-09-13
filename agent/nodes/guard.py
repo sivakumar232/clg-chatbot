@@ -68,8 +68,11 @@ def _fast_deterministic_entity_check(draft_answer: str, chunks: List[RetrievedCh
 
 
 def _call_llm_faithfulness_check(draft_answer: str, chunks: List[RetrievedChunk]) -> Tuple[bool, str | None]:
-    """Uses fast LLM inference to verify factual faithfulness."""
-    if not settings.GROQ_API_KEY:
+    """Uses fast LLM inference to verify factual faithfulness with key failover."""
+    groq_keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
+    gemini_keys = settings.GEMINI_API_KEYS or ([settings.GEMINI_API_KEY] if settings.GEMINI_API_KEY else [])
+
+    if not groq_keys and not gemini_keys:
         return True, None
 
     context_text = "\n\n".join(f"[{i}] {c.text}" for i, c in enumerate(chunks[:5], 1))
@@ -79,27 +82,54 @@ def _call_llm_faithfulness_check(draft_answer: str, chunks: List[RetrievedChunk]
         f"Is the draft answer strictly faithful to the context blocks?"
     )
 
-    try:
-        from groq import Groq
-        client = Groq(api_key=settings.GROQ_API_KEY)
-        response = client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": GUARD_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.0,
-            max_tokens=150,
-        )
-        content = response.choices[0].message.content or ""
-        data = json.loads(content)
-        is_grounded = bool(data.get("is_grounded", True))
-        reason = data.get("reason")
-        return is_grounded, reason
-    except Exception as e:
-        logfire.warn(f"Guard LLM check failed: {e}", exc_info=True)
-        return True, None
+    # 1. Try Groq keys
+    for key in groq_keys:
+        try:
+            from groq import Groq
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": GUARD_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                max_tokens=150,
+            )
+            content = response.choices[0].message.content or ""
+            data = json.loads(content)
+            is_grounded = bool(data.get("is_grounded", True))
+            reason = data.get("reason")
+            return is_grounded, reason
+        except Exception as e:
+            logfire.warn("Guard Groq check failed on key: {err}", err=str(e), exc_info=True)
+            continue
+
+    # 2. Fallback to Gemini keys
+    for key in gemini_keys:
+        try:
+            from google import genai
+            client = genai.Client(api_key=key)
+            combined = f"{GUARD_SYSTEM_PROMPT}\n\n{prompt}\n\nRespond with ONLY JSON: {{\"is_grounded\": true/false, \"reason\": \"...\"}}"
+            resp = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=combined,
+            )
+            raw = (resp.text or "").strip()
+            if raw.startswith("```json"):
+                raw = raw[7:]
+            if raw.startswith("```"):
+                raw = raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            data = json.loads(raw.strip())
+            return bool(data.get("is_grounded", True)), data.get("reason")
+        except Exception as e:
+            logfire.warn("Guard Gemini fallback failed on key: {err}", err=str(e), exc_info=True)
+            continue
+
+    return True, None
 
 
 def guard_node(state: AgentState) -> AgentState:
