@@ -131,3 +131,4 @@ scratch/
 # Agent-generated graph visualizations (regeneratable)
 # ──────────────────────────────────────────────────────────────
 docs/agent_graph.png
+docs/langgraph_guide.md

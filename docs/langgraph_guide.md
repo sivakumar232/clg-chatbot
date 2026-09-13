@@ -176,7 +176,7 @@ uv add langgraph langchain-groq
 
 ```python
 from typing import TypedDict
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
 # ── Step 1: Define State ──────────────────────────────────────────
 class State(TypedDict):
@@ -201,8 +201,8 @@ workflow = StateGraph(State)
 workflow.add_node("greet", greet_node)
 workflow.add_node("shout", shout_node)
 
-# Set where the graph starts
-workflow.set_entry_point("greet")
+# Set entry point using START node (Modern standard)
+workflow.add_edge(START, "greet")
 
 # Connect nodes
 workflow.add_edge("greet", "shout")
@@ -231,7 +231,7 @@ This is where LangGraph becomes powerful. Let's add an if/else branch:
 
 ```python
 from typing import TypedDict, Literal
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
 class State(TypedDict):
     query: str
@@ -365,7 +365,7 @@ workflow.add_node("grade", grade_docs_node)
 workflow.add_node("rewrite", rewrite_query_node)
 workflow.add_node("generate", generate_node)
 
-workflow.set_entry_point("retrieve")
+workflow.add_edge(START, "retrieve")
 workflow.add_edge("retrieve", "grade")
 
 # The conditional edge that creates the loop
@@ -421,14 +421,18 @@ class State(TypedDict):
 
 ### When Do You Need Reducers?
 
-**Scenario: Parallel Sub-Queries**
+**Scenario: Parallel Execution (Fan-Out & Fan-In)**
 
-In our Agentic RAG, when searching 6 departments simultaneously, each branch retrieves chunks. Without a reducer, the last branch to finish would overwrite all previous results!
+In our Agentic RAG, when searching multiple departments simultaneously, parallel branches run at the same time.
+
+- **Fan-Out**: Add edges from one source node (or `START`) to multiple target nodes.
+- **Fan-In**: Add edges from multiple target nodes to a single downstream join node.
+- **Reducer**: Combine parallel outputs (e.g. `operator.add`) so outputs append to state instead of overwriting each other.
 
 ```python
 from typing import TypedDict, List, Annotated
 import operator
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
 class State(TypedDict):
     query: str
@@ -440,6 +444,23 @@ def search_cse(state: State) -> dict:
 
 def search_ece(state: State) -> dict:
     return {"all_chunks": ["ECE faculty chunk 1", "ECE HOD Dr. Reddy"]}
+
+def combine_results(state: State) -> dict:
+    return {"summary": f"Retrieved {len(state['all_chunks'])} total chunks."}
+
+workflow = StateGraph(State)
+workflow.add_node("search_cse", search_cse)
+workflow.add_node("search_ece", search_ece)
+workflow.add_node("combine_results", combine_results)
+
+# Fan-Out: START triggers both CSE and ECE in parallel
+workflow.add_edge(START, "search_cse")
+workflow.add_edge(START, "search_ece")
+
+# Fan-In: Both parallel branches converge into combine_results
+workflow.add_edge("search_cse", "combine_results")
+workflow.add_edge("search_ece", "combine_results")
+workflow.add_edge("combine_results", END)
 
 # Result: all_chunks = ["CSE faculty chunk 1", "CSE HOD Dr. Kumar",
 #                       "ECE faculty chunk 1", "ECE HOD Dr. Reddy"]
@@ -456,11 +477,11 @@ LangGraph can save the state at every step to a database, enabling:
 - **Debugging** (replay a failed conversation step by step)
 
 ```python
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph, START, END
 
 # ── Create a checkpointer ─────────────────────────────────────────
-checkpointer = MemorySaver()  # In-memory. Use SqliteSaver for persistence.
+checkpointer = InMemorySaver()  # In-memory checkpointer for dev/tests.
 
 # ── Compile WITH a checkpointer ──────────────────────────────────
 app = workflow.compile(checkpointer=checkpointer)
@@ -476,16 +497,17 @@ result2 = app.invoke({"query": "What is their qualification?"}, config=config)
 # The graph can now reference context from the first message!
 ```
 
-### For Production — Use SQLite or PostgreSQL
+### For Production — Use SQLite Checkpointer
+
+Install: `pip install langgraph-checkpoint-sqlite`
 
 ```python
 from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
 
-conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
-checkpointer = SqliteSaver(conn)
-
-app = workflow.compile(checkpointer=checkpointer)
+# Use context manager or connection string
+with SqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+    app = workflow.compile(checkpointer=checkpointer)
+    result = app.invoke({"query": "What is the fee structure?"}, config=config)
 ```
 
 ---
@@ -544,30 +566,40 @@ def router_node(state: State) -> dict:
 
 ### Pattern 3: Streaming Responses
 
-```python
-# Stream only the updates each node makes
-for chunk in app.stream({"query": "..."}, stream_mode="updates"):
-    node_name = list(chunk.keys())[0]
-    node_output = chunk[node_name]
-    print(f"Node '{node_name}' returned: {node_output}")
-```
-
-### Pattern 4: Human-in-the-Loop (Interrupt)
+LangGraph supports multiple `stream_mode` options:
+- `"updates"`: Returns only the dictionary updates made by each node.
+- `"values"`: Returns the full graph state after each step.
+- `"messages"`: Streams LLM tokens & message chunks in real time as they are generated.
 
 ```python
-# Pause the graph before a critical node for human approval
-app = workflow.compile(
-    checkpointer=checkpointer,
-    interrupt_before=["generate_answer"]  # Pause before generation
-)
-
-# Run until the interrupt
-state = app.invoke({"query": "..."}, config={"configurable": {"thread_id": "1"}})
-print("Paused. Review retrieved chunks:", state["precision_chunks"])
-
-# Human reviews... then resume
-final_state = app.invoke(None, config={"configurable": {"thread_id": "1"}})
+# Stream updates node-by-node
+for chunk in app.stream({"query": "What is the fee structure?"}, stream_mode="updates"):
+    for node_name, node_output in chunk.items():
+        print(f"Node '{node_name}' returned: {node_output}")
 ```
+
+### Pattern 4: Human-in-the-Loop (Interrupts)
+
+Modern LangGraph uses `interrupt()` inside node functions to dynamically pause graph execution and prompt for human approval or input.
+
+```python
+from langgraph.types import interrupt
+
+def human_review_node(state: State) -> dict:
+    """Pauses execution and waits for human input before continuing."""
+    # Interrupt sends payload to UI/User and halts execution until resumed
+    user_response = interrupt({
+        "question": "Please verify retrieved context",
+        "chunks": state.get("precision_chunks", [])
+    })
+    
+    return {"approved": user_response.get("approved", False)}
+
+# Resume an interrupted graph execution:
+# app.invoke(Command(resume={"approved": True}), config=config)
+```
+
+*(Note: Static `interrupt_before=["node_name"]` on `workflow.compile()` is still supported for simple static breakpoints).*
 
 ---
 
@@ -975,8 +1007,8 @@ def direct_reply_node(state: GraphState) -> dict:
 ### `app/agents/graph.py` — The Main Assembly
 
 ```python
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.agents.state import GraphState
 from app.agents.nodes.router    import router_node
@@ -1019,8 +1051,8 @@ def create_agentic_rag_graph(use_memory: bool = False):
     workflow.add_node("generate_answer", generate_answer_node)
     workflow.add_node("direct_reply",    direct_reply_node)
     
-    # 2. Entry Point
-    workflow.set_entry_point("route_query")
+    # 2. Entry Point using START node
+    workflow.add_edge(START, "route_query")
     
     # 3. Conditional Edge: Routing → 3-way branch
     workflow.add_conditional_edges(
@@ -1056,7 +1088,7 @@ def create_agentic_rag_graph(use_memory: bool = False):
     workflow.add_edge("direct_reply",    END)
     workflow.add_edge("generate_answer", END)
     
-    checkpointer = MemorySaver() if use_memory else None
+    checkpointer = InMemorySaver() if use_memory else None
     return workflow.compile(checkpointer=checkpointer)
 
 
@@ -1222,7 +1254,7 @@ def retrieve_node(state):
 
 ```python
 # Both of these are REQUIRED or the graph will error at compile time:
-workflow.set_entry_point("first_node")   # Where does it start?
+workflow.add_edge(START, "first_node")   # Where does it start?
 workflow.add_edge("last_node", END)      # Where does it end?
 ```
 
