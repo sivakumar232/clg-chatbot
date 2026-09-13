@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SRKR Engineering College - Agentic RAG Assistant",
+  title: "SRKR Engineering College - AI Campus Assistant",
   description:
-    "AI-powered multi-agent campus assistant for syllabus, faculty, department regulations, and admissions at SRKR Engineering College (Autonomous).",
+    "AI-powered multi-agent campus assistant for syllabus, faculty, regulations, and admissions at SRKR Engineering College (Autonomous).",
 };
 
 export default function RootLayout({
@@ -26,9 +26,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#090D16] text-slate-100 font-sans">
+      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-[#800020]/15 selection:text-[#800020]">
         {children}
       </body>
     </html>

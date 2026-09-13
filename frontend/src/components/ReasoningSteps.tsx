@@ -9,7 +9,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
-  CheckCircle2,
+  Check,
   Loader2,
 } from "lucide-react";
 
@@ -18,54 +18,47 @@ interface ReasoningStepsProps {
   isStreaming?: boolean;
 }
 
-// Convert technical node names into clean, simple user-facing stages
 function getFriendlyPhase(node: string) {
   switch (node) {
     case "cache":
     case "cache_check":
       return {
-        stage: "Checking Memory",
-        simpleLabel: "Checking quick answers",
+        stage: "Checking Cache",
+        detail: "Checking quick verified answers",
         icon: Brain,
-        color: "text-indigo-400",
       };
     case "planner":
       return {
-        stage: "Planning",
-        simpleLabel: "Understanding question & planning search",
+        stage: "Query Analysis",
+        detail: "Formulating multi-angle search query",
         icon: Brain,
-        color: "text-indigo-400",
       };
     case "executor":
     case "reranker":
       return {
-        stage: "Searching",
-        simpleLabel: "Searching SRKR syllabus & department records",
+        stage: "Searching Records",
+        detail: "Searching SRKR syllabus & regulations",
         icon: Search,
-        color: "text-cyan-400",
       };
     case "validator":
     case "guard":
       return {
-        stage: "Verifying",
-        simpleLabel: "Verifying accuracy & official regulations",
+        stage: "Verifying Facts",
+        detail: "Validating against official college guidelines",
         icon: ShieldCheck,
-        color: "text-emerald-400",
       };
     case "generator":
     case "responder":
       return {
-        stage: "Generating",
-        simpleLabel: "Writing answer with citations",
+        stage: "Composing Answer",
+        detail: "Synthesizing response with citations",
         icon: Sparkles,
-        color: "text-amber-400",
       };
     default:
       return {
         stage: "Thinking",
-        simpleLabel: "Processing request",
+        detail: "Processing your request",
         icon: Brain,
-        color: "text-slate-400",
       };
   }
 }
@@ -77,71 +70,87 @@ export function ReasoningSteps({ steps, isStreaming }: ReasoningStepsProps) {
 
   const activeStep = steps.find((s) => s.status === "active");
   const activePhase = activeStep ? getFriendlyPhase(activeStep.node) : null;
-  const ActiveIcon = activePhase?.icon || Loader2;
 
-  // Consolidate unique stages for clean, simple bullet display
   const consolidatedStages = [
     {
       key: "planning",
-      title: "Understanding & Planning",
-      desc: "Analyzed query intent and selected optimal search strategy",
+      title: "Question Understanding & Planning",
+      desc: "Decomposed query and formulated optimal dense & keyword search strategy",
       isDone: steps.some((s) => ["planner", "cache"].includes(s.node)),
-      isActive: activeStep ? ["planner", "cache", "init"].includes(activeStep.node) : false,
+      isActive: activeStep
+        ? ["planner", "cache", "init"].includes(activeStep.node)
+        : false,
     },
     {
       key: "searching",
-      title: "Searching College Knowledge Base",
-      desc: "Retrieved and ranked relevant SRKR syllabus and college documents",
-      isDone: steps.some((s) => ["executor", "reranker"].includes(s.node) && s.status === "completed"),
-      isActive: activeStep ? ["executor", "reranker"].includes(activeStep.node) : false,
+      title: "SRKR Knowledge Base Retrieval",
+      desc: "Retrieved relevant official syllabus documents, faculty rosters, and regulations",
+      isDone: steps.some(
+        (s) =>
+          ["executor", "reranker"].includes(s.node) && s.status === "completed"
+      ),
+      isActive: activeStep
+        ? ["executor", "reranker"].includes(activeStep.node)
+        : false,
     },
     {
       key: "verifying",
-      title: "Verifying Information",
-      desc: "Checked syllabus regulations, course codes, and source facts",
-      isDone: steps.some((s) => ["validator", "guard"].includes(s.node) && s.status === "completed"),
-      isActive: activeStep ? ["validator", "guard"].includes(activeStep.node) : false,
+      title: "Fact & Policy Verification",
+      desc: "Cross-checked course codes, credit distribution, and source accuracy",
+      isDone: steps.some(
+        (s) =>
+          ["validator", "guard"].includes(s.node) && s.status === "completed"
+      ),
+      isActive: activeStep
+        ? ["validator", "guard"].includes(activeStep.node)
+        : false,
     },
     {
       key: "generating",
-      title: "Generating Response",
-      desc: "Synthesizing answer with verified citations",
+      title: "Synthesizing Response",
+      desc: "Generated coherent response with cited references",
       isDone: !isStreaming && steps.length > 0,
-      isActive: activeStep ? ["generator", "responder"].includes(activeStep.node) : false,
+      isActive: activeStep
+        ? ["generator", "responder"].includes(activeStep.node)
+        : false,
     },
   ];
 
   return (
-    <div className="mb-3 w-full max-w-xl">
-      {/* Sleek Minimal Status Pill */}
+    <div className="mb-3 w-full">
+      {/* Status Pill Button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 ${
+        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer ${
           isStreaming
-            ? "bg-indigo-950/30 border-indigo-500/30 text-indigo-200 shadow-sm"
-            : "bg-slate-900/50 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+            ? "bg-rose-50/80 border-rose-200 text-[#800020] shadow-xs"
+            : "bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
         }`}
       >
         <div className="flex items-center gap-2 truncate">
           {isStreaming ? (
             <>
-              <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />
-              <span className="font-medium text-indigo-300">
+              <Loader2 className="w-3.5 h-3.5 text-[#800020] animate-spin shrink-0" />
+              <span className="font-semibold text-[#800020]">
                 {activePhase ? `${activePhase.stage}...` : "Thinking..."}
               </span>
-              <span className="text-slate-400 text-[11px] truncate hidden sm:inline">
-                ({activePhase?.simpleLabel})
+              <span className="text-slate-500 text-[11px] truncate hidden sm:inline">
+                ({activePhase?.detail})
               </span>
             </>
           ) : (
             <>
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="text-slate-300">Thought Process Completed</span>
+              <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <Check className="w-2.5 h-2.5 stroke-[3]" />
+              </div>
+              <span className="text-slate-700 font-medium text-[11px]">
+                Agent Reasoned in {steps.length} Steps
+              </span>
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-300 shrink-0 ml-2">
+        <div className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 shrink-0 ml-2">
           <span>{isExpanded ? "Hide" : "Details"}</span>
           {isExpanded ? (
             <ChevronUp className="w-3 h-3" />
@@ -151,32 +160,35 @@ export function ReasoningSteps({ steps, isStreaming }: ReasoningStepsProps) {
         </div>
       </button>
 
-      {/* Expanded Simple View */}
+      {/* Expanded Details */}
       {isExpanded && (
-        <div className="mt-2 p-3 bg-slate-950/70 rounded-xl border border-slate-800/80 space-y-2.5 backdrop-blur-sm shadow-inner">
+        <div className="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
           {consolidatedStages.map((stage) => {
             if (!stage.isDone && !stage.isActive) return null;
 
             return (
-              <div
-                key={stage.key}
-                className="flex items-start gap-2.5 text-xs"
-              >
+              <div key={stage.key} className="flex items-start gap-2.5 text-xs">
                 <div className="mt-0.5 shrink-0">
                   {stage.isActive ? (
-                    <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 text-[#800020] animate-spin" />
                   ) : stage.isDone ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <div className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                      <Check className="w-2 h-2 stroke-[3]" />
+                    </div>
                   ) : (
-                    <div className="w-3.5 h-3.5 rounded-full border border-slate-700" />
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300" />
                   )}
                 </div>
 
-                <div>
-                  <div className={`font-medium ${stage.isActive ? "text-indigo-300 font-semibold" : "text-slate-200"}`}>
+                <div className="flex-1 min-w-0">
+                  <div
+                    className={`font-semibold ${
+                      stage.isActive ? "text-[#800020]" : "text-slate-800"
+                    }`}
+                  >
                     {stage.title}
                   </div>
-                  <div className="text-[11px] text-slate-400 leading-normal">
+                  <div className="text-[11px] text-slate-500 leading-normal mt-0.5">
                     {stage.desc}
                   </div>
                 </div>
