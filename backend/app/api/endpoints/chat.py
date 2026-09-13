@@ -156,14 +156,14 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
         })
 
     except Exception as e:
-        logfire.error(f"Streaming error in LangGraph: {e}", exc_info=True)
+        logfire.error("Streaming error in LangGraph: {err}", err=str(e), exc_info=True)
         yield _format_sse({
             "type": "error",
             "message": f"An error occurred during pipeline execution: {str(e)}",
         })
 
 
-@router.post("/chat/stream")
+@router.post("/stream")
 async def chat_stream(request: ChatRequest):
     """
     Server-Sent Events (SSE) endpoint:
@@ -182,7 +182,8 @@ async def chat_stream(request: ChatRequest):
     )
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
+@router.post("/", response_model=ChatResponse)
 async def chat_standard(request: ChatRequest):
     """Standard REST endpoint for non-streaming clients."""
     from agent.graph import run_agent

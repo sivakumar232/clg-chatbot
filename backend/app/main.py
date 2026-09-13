@@ -45,6 +45,12 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Instrument FastAPI with Logfire
+    try:
+        logfire.instrument_fastapi(app)
+    except Exception:
+        pass
+
     # CORS configuration
     app.add_middleware(
         CORSMiddleware,
