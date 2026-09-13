@@ -1,9 +1,12 @@
 import os 
 from dotenv import load_dotenv
+import logfire
 
 load_dotenv()
 
 class Settings:
+    LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN")
+    
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "collection2")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
@@ -20,3 +23,11 @@ class Settings:
     EMBEDDING_DIM = 1024
     
 settings = Settings()
+
+# Centralized Logfire configuration
+logfire.configure(
+    service_name="srkr_academic_advisor",
+    send_to_logfire=True if settings.LOGFIRE_TOKEN else "if-token-present",
+    token=settings.LOGFIRE_TOKEN or None,
+    inspect_arguments=False,
+)
