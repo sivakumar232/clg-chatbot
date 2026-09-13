@@ -25,6 +25,7 @@ dependencies = [
     "groq>=1.7.0",
     "rank-bm25>=0.2.2",
     "logfire>=5.0.0",
+    "langgraph>=1.2.11",
 ]
 
 [project.scripts]

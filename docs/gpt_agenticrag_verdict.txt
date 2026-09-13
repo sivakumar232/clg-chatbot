@@ -1,0 +1,594 @@
+Adaptive Agentic RAG Architecture — Final Verdict & Summary
+1. Core Problem Identified
+
+A normal RAG pipeline:
+
+User Query
+    |
+Embedding
+    |
+Vector Search (Top-K)
+    |
+Reranker
+    |
+LLM
+    |
+Answer
+
+works for simple questions but fails for a complex institutional knowledge base.
+
+Your college KB has:
+
+Multiple regulations (R20, R23, R24, R25)
+Multiple departments
+Different document types
+Structured information (HODs, faculty, committees)
+Versioned information (syllabus changes)
+Tables and policies
+Frequently changing data
+
+The main failure is:
+
+Treating the entire knowledge base as one semantic search space.
+
+2. Main Insight
+
+The system should not directly answer:
+
+Question → Retrieve → Generate
+
+Instead:
+
+Question
+   |
+Understand what is being asked
+   |
+Understand what knowledge exists
+   |
+Decide how to retrieve
+   |
+Retrieve evidence
+   |
+Check if evidence is enough
+   |
+Generate answer
+
+This is the essence of Adaptive Agentic RAG.
+
+3. Important Realization: Ambiguity Cannot Always Be Detected From Query Alone
+
+Example:
+
+User:
+
+"Give me Machine Learning syllabus"
+
+The query itself looks clear.
+
+The agent initially sees:
+
+Intent:
+syllabus lookup
+
+Subject:
+Machine Learning
+
+No ambiguity yet.
+
+Only after checking the knowledge base:
+
+Machine Learning
+    |
+    |-- R20
+    |-- R23
+    |-- R24
+
+the system realizes:
+
+Multiple valid answers exist.
+User did not specify regulation.
+
+Therefore:
+
+Ambiguity is discovered by combining:
+
+User Query
+      +
+Knowledge Base Understanding
+      =
+Ambiguity Detection
+4. Do Not Build a Static Decision Tree
+
+Bad design:
+
+              Query
+
+        Is ambiguous?
+
+        /          \
+
+    Yes             No
+
+    Ask          Retrieve
+
+Why?
+
+Because real-world situations are not binary.
+
+You can encounter:
+
+Clear answer
+Multiple possible answers
+Missing information
+Conflicting documents
+Outdated information
+Broad queries
+Partial information
+Wrong user assumptions
+5. Correct Mental Model: Adaptive Control Loop
+
+The architecture should work like this:
+
+                 User Query
+                     |
+                     v
+          Query Understanding Agent
+                     |
+                     v
+          Knowledge Awareness Layer
+                     |
+                     v
+          Retrieval Planning Agent
+                     |
+                     v
+             Execute Retrieval
+                     |
+                     v
+          Evidence Evaluation Agent
+                     |
+       +-------------+-------------+
+       |             |             |
+       v             v             v
+
+   Enough       Missing       Conflict
+
+   Answer       Retrieve      Resolve
+                Again
+
+The system adapts based on uncertainty.
+
+6. Final Recommended Architecture
+High-Level Architecture
+                         USER
+                           |
+                           v
+                Query Understanding Agent
+                           |
+                           v
+                Knowledge Awareness Layer
+                           |
+                           v
+                Retrieval Planning Agent
+                           |
+        -------------------------------------
+        |                  |                |
+        v                  v                v
+
+ Metadata Search      Hybrid Search     Structured Query
+
+                    (Dense + BM25)
+
+        -------------------------------------
+
+                           |
+                           v
+
+                    RRF Fusion
+
+                           |
+                           v
+
+                    Reranker
+
+                           |
+                           v
+
+              Evidence / Confidence Evaluation
+
+                           |
+                           v
+
+                       LLM Generation
+7. Components Explained
+A. Query Understanding Agent
+
+Purpose:
+
+Understand the user's intention.
+
+Extract:
+
+Intent
+Entities
+Constraints
+Expected output
+
+Example:
+
+Query:
+
+"Compare R20 and R23 Machine Learning syllabus"
+
+Output:
+
+{
+ "intent": "comparison",
+ "subject": "Machine Learning",
+ "regulations": [
+    "R20",
+    "R23"
+ ]
+}
+B. Knowledge Awareness Layer
+
+This is the most important addition.
+
+It tells the agent:
+
+"What exists in my knowledge base?"
+
+Not manually maintained.
+
+Generated automatically during ingestion.
+
+Example:
+
+Machine Learning
+
+    Regulations:
+       R20
+       R23
+       R24
+
+    Departments:
+       CSE
+       IT
+
+    Documents:
+       syllabus
+       curriculum
+8. Metadata Is Not Only For Filtering
+
+Metadata becomes reasoning information.
+
+Example:
+
+Document metadata:
+
+{
+"type":"syllabus",
+"subject":"Machine Learning",
+"department":"CSE",
+"regulation":"R23",
+"semester":"VI"
+}
+
+The agent uses this to understand:
+
+Multiple regulations exist.
+
+The user did not specify.
+
+Need clarification.
+9. Knowledge Catalogue Should Not Be Manually Maintained
+
+Wrong approach:
+
+catalogue.json
+
+Manually update whenever PDF changes
+
+This does not scale.
+
+Correct approach:
+
+During ingestion:
+
+New Document
+      |
+      v
+Metadata Extraction Agent
+      |
+      v
+Knowledge Catalogue Update
+
+Example:
+
+New file:
+
+R26_CSE_ML.pdf
+
+Extraction:
+
+{
+"subject":"Machine Learning",
+"regulation":"R26",
+"department":"CSE"
+}
+
+Automatically added.
+
+10. Catalogue Is Not The Truth
+
+Important:
+
+Do not assume:
+
+Perfect catalogue
+       |
+       v
+Perfect RAG
+
+Instead:
+
+Catalogue
+    +
+Document Retrieval
+    +
+Evidence Verification
+    =
+Reliable Answer
+
+Catalogue helps navigation.
+
+Documents provide proof.
+
+11. Retrieval Architecture
+
+Do not use only:
+
+Jina Embedding
+       |
+Qdrant
+       |
+Reranker
+
+Use:
+
+                Query
+
+                  |
+
+        Metadata Filtering
+
+                  |
+
+        Hybrid Retrieval
+
+          /             \
+
+     Dense Search      BM25
+
+          \             /
+
+              RRF Fusion
+
+                  |
+
+             Reranker
+
+                  |
+
+          Evidence Checking
+12. Why Hybrid Search Is Required
+
+Your KB has:
+
+Semantic information
+
+Example:
+
+"Explain learning outcomes of ML"
+
+Needs:
+
+Dense Search
+
+because meaning matters.
+
+Exact information
+
+Example:
+
+"CS303 syllabus"
+
+Needs:
+
+BM25 / keyword search
+
+because exact codes matter.
+
+Therefore:
+
+Dense + Sparse + Metadata
+
+is the correct retrieval foundation.
+
+13. Different Queries Need Different Retrieval Strategies
+
+Do not use one retrieval method.
+
+Examples:
+
+Direct fact
+
+Question:
+
+Who is CSE HOD?
+
+Use:
+
+Structured lookup
+Syllabus query
+
+Question:
+
+ML syllabus R23
+
+Use:
+
+Metadata filter
++
+Hybrid search
++
+Reranking
+Compare query
+
+Question:
+
+Compare R20 and R23 ML syllabus
+
+Use:
+
+Retrieve R20
+Retrieve R23
+Analyze differences
+All entities query
+
+Question:
+
+List all HODs
+
+Use:
+
+Department-wise retrieval
++
+Coverage checking
+14. Coverage Checking Is Critical
+
+Reranker only answers:
+
+Which documents are relevant?
+
+It does not answer:
+
+Did I retrieve everything required?
+
+Example:
+
+Question:
+
+All HODs
+
+Retrieved:
+
+CSE ✓
+ECE ✓
+IT ✓
+
+Missing:
+
+EEE
+Civil
+Mechanical
+ASH
+MS
+
+The system should detect:
+
+Incomplete evidence
+
+and retrieve again.
+
+15. Evidence Evaluation Agent
+
+After retrieval, evaluate:
+
+Enough evidence?
+Yes → Generate
+
+No → Retrieve more
+Conflicts?
+
+Example:
+
+ECE HOD = X
+ECE HOD = Y
+
+Then:
+
+Check document date
+Check authority
+Resolve conflict
+Low confidence?
+
+Ask user.
+
+16. Final Adaptive Agentic RAG Flow
+                 User Query
+
+                      |
+
+            Query Understanding
+
+                      |
+
+            Knowledge Awareness
+
+                      |
+
+            Retrieval Planning
+
+                      |
+
+        --------------------------------
+
+        |              |               |
+
+   Metadata       Hybrid Search   Structured DB
+
+   Search          Dense+BM25       Query
+
+
+        --------------------------------
+
+                      |
+
+                  Reranking
+
+                      |
+
+              Evidence Evaluation
+
+                      |
+
+        --------------------------------
+
+        |              |               |
+
+     Answer       Retrieve More    Ask User
+
+Final Verdict
+
+For your college knowledge base, the best architecture is:
+
+Adaptive Hybrid Agentic RAG
+
+with:
+
+Core Intelligence Layer
+Query understanding
+Knowledge awareness
+Retrieval planning
+Ambiguity detection
+Evidence verification
+Retrieval Layer
+Metadata filtering
+Hybrid search (Dense + BM25)
+RRF fusion
+Reranking
+Knowledge Layer
+Vector database (Qdrant)
+Sparse search index
+Structured database
+Automatically generated metadata catalogue
