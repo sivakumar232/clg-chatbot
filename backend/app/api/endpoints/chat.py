@@ -6,6 +6,7 @@ Uses LangGraph app.stream(stream_mode="updates") to emit real-time
 Server-Sent Events (SSE) as each node in the graph executes.
 """
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -40,7 +41,7 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
         "query":                 query,
         "chat_history":          chat_history,
         "retrieval_retry_count": 0,
-        "max_retrieval_retries": 1,
+        "max_retrieval_retries": 2,
         "guard_retry_count":     0,
         "max_guard_retries":     1,
         "accumulated_chunks":    [],
@@ -59,8 +60,15 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
     final_degraded = False
 
     try:
-        # Stream updates as each LangGraph node finishes execution
-        for step in app.stream(initial_state, stream_mode="updates"):
+        # Run the synchronous LangGraph stream in a thread pool to avoid
+        # blocking the FastAPI async event loop (critical for multi-user serving).
+        def _run_graph_stream():
+            return list(app.stream(initial_state, stream_mode="updates"))
+
+        steps = await asyncio.to_thread(_run_graph_stream)
+
+        # Process and emit SSE events for each completed node
+        for step in steps:
             for node_name, node_output in step.items():
 
                 if node_name == "cache":
@@ -137,7 +145,7 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
                     yield _format_sse({
                         "type": "step",
                         "node": "guard",
-                        "label": "Answer faithfulness verified (No hallucinations)",
+                        "label": "Answer faithfulness verified (Deterministic check)",
                         "guard_status": g_status,
                     })
 

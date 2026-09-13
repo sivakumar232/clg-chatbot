@@ -34,36 +34,38 @@ RULES:
 
 
 def _call_groq_reformulator(original_query: str, failure_reason: str, missing_sq: List[str]) -> str | None:
-    """Calls Groq to generate a targeted expansion query."""
-    if not settings.GROQ_API_KEY:
+    """Calls Groq to generate a targeted expansion query with full key-bucket failover."""
+    keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
+    if not keys:
         return None
 
-    try:
-        from groq import Groq
-        client = Groq(api_key=settings.GROQ_API_KEY)
-        
-        prompt = (
-            f"Original Query: \"{original_query}\"\n"
-            f"Failure Reason: {failure_reason}\n"
-        )
-        if missing_sq:
-            prompt += f"Missing Sub-Queries: {missing_sq}\n"
-        prompt += "\nGenerate the revised search string:"
+    prompt = (
+        f"Original Query: \"{original_query}\"\n"
+        f"Failure Reason: {failure_reason}\n"
+    )
+    if missing_sq:
+        prompt += f"Missing Sub-Queries: {missing_sq}\n"
+    prompt += "\nGenerate the revised search string:"
 
-        response = client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": REFORMULATOR_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.1,
-            max_tokens=60,
-        )
-        text = (response.choices[0].message.content or "").strip().replace('"', '')
-        return text if text else None
-    except Exception as e:
-        logfire.warn(f"Groq reformulator call failed: {e}", exc_info=True)
-        return None
+    from groq import Groq
+    for key in keys:
+        try:
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": REFORMULATOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=60,
+            )
+            text = (response.choices[0].message.content or "").strip().replace('"', '')
+            return text if text else None
+        except Exception as e:
+            logfire.warn(f"Groq reformulator key failed: {e}", exc_info=True)
+            continue
+    return None
 
 
 def reformulator_node(state: AgentState) -> AgentState:

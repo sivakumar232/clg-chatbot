@@ -68,16 +68,36 @@ Output MUST be a JSON object with this exact schema:
 
 
 def _format_history_context(chat_history: List[Dict[str, str]]) -> str:
-    """Formats last 4 turns of conversation history for the planner prompt."""
+    """
+    Formats conversation history for the planner prompt.
+    - Last 2 turns: kept verbatim (needed for coreference resolution).
+    - Older turns: compressed into a compact summary to save tokens.
+    """
     if not chat_history:
         return "None"
-    recent = chat_history[-4:]
-    formatted = []
+
+    recent = chat_history[-2:]
+    older  = chat_history[:-2]
+
+    parts: List[str] = []
+
+    if older:
+        # Extract topic keywords from older turns for a compact summary
+        topics = []
+        for msg in older:
+            content = msg.get("content", "").strip()
+            if content and msg.get("role") == "user":
+                # Take first 60 chars of each older user message as topic hint
+                topics.append(content[:60].rstrip() + ("..." if len(content) > 60 else ""))
+        if topics:
+            parts.append(f"[Earlier context — user asked about: {'; '.join(topics)}]")
+
     for msg in recent:
-        role = msg.get("role", "user").capitalize()
+        role    = msg.get("role", "user").capitalize()
         content = msg.get("content", "").strip()
-        formatted.append(f"{role}: {content}")
-    return "\n".join(formatted)
+        parts.append(f"{role}: {content}")
+
+    return "\n".join(parts)
 
 
 def _call_groq_planner(prompt_text: str) -> Optional[Dict[str, Any]]:

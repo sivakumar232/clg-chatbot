@@ -36,10 +36,27 @@ def _execute_single_subquery(sub_q: Dict[str, Any], retriever: HybridRetriever) 
     """
     Executes a single hybrid retrieval pass for one sub-query.
     Fetches top 40 dense candidates, applies BM25, and fuses to top 20.
+    Passes any metadata_filter from the planner to Qdrant for filtered search.
     """
     query_text = sub_q.get("query", "").strip()
     if not query_text:
         return []
+
+    # Build Qdrant filter from planner metadata_filter if present
+    qdrant_filter = None
+    metadata_filter = sub_q.get("metadata_filter")
+    if metadata_filter and isinstance(metadata_filter, dict):
+        try:
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            conditions = [
+                FieldCondition(key=k, match=MatchValue(value=v))
+                for k, v in metadata_filter.items()
+                if v is not None
+            ]
+            if conditions:
+                qdrant_filter = Filter(must=conditions)
+        except Exception:
+            qdrant_filter = None  # Silently skip filter if qdrant_client models unavailable
 
     try:
         # Retrieve top 40 dense candidates, fuse to top 20 hybrid chunks
@@ -47,6 +64,7 @@ def _execute_single_subquery(sub_q: Dict[str, Any], retriever: HybridRetriever) 
             query=query_text,
             top_k_dense=40,
             top_k_final=20,
+            qdrant_filter=qdrant_filter,
         )
         return chunks
     except Exception as e:

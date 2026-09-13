@@ -10,8 +10,7 @@ export function useAgentChat() {
     {
       id: "welcome-msg",
       role: "assistant",
-      content:
-        "Hello! I am your **Campus AI Academic Assistant**.\n\nI can assist you with:\n- 📚 **Syllabus & Regulations** (Curriculum structure, course codes, credits)\n- 👨‍🏫 **Faculty & Department Directory**\n- 🏢 **Campus Facilities & Labs**\n- 🎯 **Placements, Admissions & Regulations**\n\nHow can I help you today?",
+      content: "Hello! How can I help you today?",
       createdAt: Date.now(),
     },
   ]);

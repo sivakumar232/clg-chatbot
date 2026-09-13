@@ -137,6 +137,10 @@ def guard_node(state: AgentState) -> AgentState:
     LangGraph Guard node:
     Reads:  draft_answer, reranked_chunks, pruned_chunks, guard_retry_count, max_guard_retries
     Writes: guard_status, guard_feedback, guard_retry_count
+
+    Strategy: fast deterministic course-code check only.
+    Semantic faithfulness is enforced upstream via the generator's
+    self-verification system prompt (saves 500-1200ms per query).
     """
     draft = state.get("draft_answer", "").strip()
     chunks = state.get("pruned_chunks") or state.get("reranked_chunks", [])
@@ -146,14 +150,8 @@ def guard_node(state: AgentState) -> AgentState:
     with logfire.span("Answer Guard Node", retry=retry_count) as span:
         t0 = time.time()
 
-        # 1. Deterministic code check (e.g. fabricated course codes)
-        det_ok, det_reason = _fast_deterministic_entity_check(draft, chunks)
-        if not det_ok:
-            is_grounded = False
-            feedback = det_reason
-        else:
-            # 2. LLM semantic faithfulness check
-            is_grounded, feedback = _call_llm_faithfulness_check(draft, chunks)
+        # Fast deterministic check: catch any fabricated course codes
+        is_grounded, feedback = _fast_deterministic_entity_check(draft, chunks)
 
         elapsed = time.time() - t0
         span.set_attribute("is_grounded", is_grounded)
@@ -163,14 +161,14 @@ def guard_node(state: AgentState) -> AgentState:
         if is_grounded:
             span.set_attribute("status", "grounded")
             print("=" * 60)
-            print(f"  ANSWER GUARD: PASSED (Grounded in {elapsed:.2f}s)")
+            print(f"  ANSWER GUARD: PASSED (Deterministic check in {elapsed:.2f}s)")
             print("=" * 60 + "\n")
             return {
                 "guard_status":   GuardStatus.GROUNDED,
                 "guard_feedback": None,
             }
 
-        # Handle ungrounded
+        # Handle ungrounded (fabricated course code detected)
         if retry_count < max_retries:
             new_retries = retry_count + 1
             span.set_attribute("status", "retry")
@@ -195,3 +193,4 @@ def guard_node(state: AgentState) -> AgentState:
             "guard_status":      GuardStatus.UNGROUNDED_EXHAUSTED,
             "guard_feedback":    feedback,
         }
+

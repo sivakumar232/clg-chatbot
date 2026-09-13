@@ -43,6 +43,11 @@ STYLE & PRESENTATION GUIDELINES:
    - Base all statements SOLELY on the provided Context Blocks. Never speculate beyond what is documented.
    - Do NOT insert distracting in-text tags like [Source 1] or [Source 2] in the body.
    - Do NOT append a manual "Sources:" URL list at the end of your response, as verified sources are automatically parsed and displayed by the interface.
+
+4. Silent Self-Verification (before writing your response):
+   - Mentally verify every course code, credit count, faculty name, and regulation number against the Context Blocks.
+   - If a specific fact (e.g., a course code or credit) does NOT appear in any Context Block, do NOT include it.
+   - Do NOT mention this verification step in your response — just produce clean, grounded output.
 """
 
 
@@ -119,7 +124,7 @@ def _call_groq_generator(prompt: str) -> Tuple[str, str]:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
-                max_tokens=896,
+                max_tokens=2048,
             )
             answer = response.choices[0].message.content or ""
             return answer, f"Groq ({settings.GROQ_MODEL})"

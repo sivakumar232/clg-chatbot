@@ -206,7 +206,7 @@ def run_agent(
             "query":                 query,
             "chat_history":          chat_history or [],
             "retrieval_retry_count": 0,
-            "max_retrieval_retries": 1,
+            "max_retrieval_retries": 2,
             "guard_retry_count":     0,
             "max_guard_retries":     1,
             "accumulated_chunks":    [],

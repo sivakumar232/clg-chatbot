@@ -17,7 +17,7 @@ Each concern lives in its own module:
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 import logfire
 
 # Ensure project root is importable (for config and Ingestion)
@@ -59,24 +59,27 @@ class HybridRetriever:
     @logfire.instrument("Pass 1+2: Hybrid Retrieval", extract_args=False)
     def retrieve(
         self,
-        query:        str,
-        top_k_dense:  int = 40,
-        top_k_final:  int = 20,
+        query:          str,
+        top_k_dense:    int = 40,
+        top_k_final:    int = 20,
+        qdrant_filter:  Optional[Any] = None,
     ) -> List[RetrievedChunk]:
         """
         Run the full hybrid retrieval pipeline for a given query.
 
         Args:
-            query        : User question.
-            top_k_dense  : Candidate pool size fetched from Qdrant.
-                           Larger pool → BM25 has more candidates to re-rank.
-            top_k_final  : Chunks returned after RRF fusion (input to reranker).
+            query          : User question.
+            top_k_dense    : Candidate pool size fetched from Qdrant.
+                             Larger pool → BM25 has more candidates to re-rank.
+            top_k_final    : Chunks returned after RRF fusion (input to reranker).
+            qdrant_filter  : Optional Qdrant Filter object for metadata-based
+                             pre-filtering (e.g. {regulation: R23, department: CSE}).
 
         Returns:
             List[RetrievedChunk] sorted by RRF score descending.
         """
         t0 = time.time()
-        self._print_header(query, top_k_dense, top_k_final)
+        self._print_header(query, top_k_dense, top_k_final, qdrant_filter)
 
         # Step 1 — Embed the query
         t_emb = time.time()
@@ -86,8 +89,9 @@ class HybridRetriever:
 
         # Step 2 — Dense vector search (Qdrant)
         t_dense = time.time()
-        print(f"  [STEP 2] Dense search in Qdrant '{self.collection_name}' (top {top_k_dense}) ...")
-        dense_candidates = self._dense_search(query_vector, top_k_dense)
+        filter_label = f" [filter: {qdrant_filter}]" if qdrant_filter else ""
+        print(f"  [STEP 2] Dense search in Qdrant '{self.collection_name}' (top {top_k_dense}){filter_label} ...")
+        dense_candidates = self._dense_search(query_vector, top_k_dense, qdrant_filter=qdrant_filter)
         print(f"  ✓ {len(dense_candidates)} candidates retrieved in {time.time() - t_dense:.2f}s")
         self._print_top(dense_candidates, label="Dense", n=3)
 
@@ -119,18 +123,21 @@ class HybridRetriever:
     @logfire.instrument("Qdrant Dense Vector Search", extract_args=False)
     def _dense_search(
         self,
-        query_vector: List[float],
-        top_k:        int,
+        query_vector:  List[float],
+        top_k:         int,
+        qdrant_filter: Optional[Any] = None,
     ) -> List[RetrievedChunk]:
         """
         Queries Qdrant with the embedded query vector using cosine similarity.
         Returns the top_k nearest chunks with their full payloads.
+        Optionally applies a Qdrant metadata filter for pre-filtering results.
         """
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
             limit=top_k,
             with_payload=True,
+            query_filter=qdrant_filter,
         )
 
         chunks: List[RetrievedChunk] = []
@@ -155,13 +162,16 @@ class HybridRetriever:
     #  Print helpers
     # ──────────────────────────────────────────────────────────────────────
 
-    def _print_header(self, query: str, top_k_dense: int, top_k_final: int) -> None:
+    def _print_header(self, query: str, top_k_dense: int, top_k_final: int, qdrant_filter: Optional[Any] = None) -> None:
         print("\n" + "=" * 65)
         print("  HYBRID RETRIEVAL — Dense + BM25 + RRF Fusion")
         print("=" * 65)
         print(f"  • Query        : \"{query}\"")
         print(f"  • Dense pool   : top {top_k_dense} from Qdrant")
-        print(f"  • Final output : top {top_k_final} after RRF fusion\n")
+        print(f"  • Final output : top {top_k_final} after RRF fusion")
+        if qdrant_filter:
+            print(f"  • Qdrant Filter: {qdrant_filter}")
+        print()
 
     def _print_top(self, chunks: List[RetrievedChunk], label: str, n: int = 3) -> None:
         """Prints a compact preview of the top-n chunks in a ranked list."""
