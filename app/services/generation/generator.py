@@ -3,6 +3,7 @@ import sys
 import time
 from pathlib import Path
 from typing import List, Tuple
+from langsmith import traceable
 
 # Ensure project root is importable (for config and Ingestion)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -65,6 +66,7 @@ class LLMGenerator:
         )
         return user_content
 
+    @traceable(name="Pass 4: LLM Answer Generation", run_type="llm")
     def generate(self, query: str, chunks: List[RetrievedChunk]) -> Tuple[str, str]:
         """
         Generates response using Groq with fallback to Google Gemini.

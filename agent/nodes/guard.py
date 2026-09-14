@@ -20,6 +20,7 @@ import json
 import re
 import time
 from typing import Any, Dict, List, Tuple
+from langsmith import traceable
 
 from config import settings
 from agent.state import AgentState, GuardStatus
@@ -83,6 +84,7 @@ def _fast_deterministic_entity_check(draft_answer: str, chunks: List[RetrievedCh
     return True, None
 
 
+@traceable(name="Guard LLM Faithfulness Check", run_type="llm")
 def _call_llm_faithfulness_check(draft_answer: str, chunks: List[RetrievedChunk]) -> Tuple[bool, str | None]:
     """Uses fast LLM inference to verify factual faithfulness with key failover."""
     groq_keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
@@ -148,6 +150,7 @@ def _call_llm_faithfulness_check(draft_answer: str, chunks: List[RetrievedChunk]
     return True, None
 
 
+@traceable(name="Answer Guard Node", run_type="chain")
 def guard_node(state: AgentState) -> AgentState:
     """
     LangGraph Guard node:

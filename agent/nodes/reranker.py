@@ -12,6 +12,7 @@ Responsibilities:
 
 import time
 from typing import List
+from langsmith import traceable
 
 from agent.state import AgentState
 from app.models import RetrievedChunk
@@ -45,6 +46,7 @@ def _compute_top_n(state: AgentState) -> int:
     return 5  # single focused query — keep it precise
 
 
+@traceable(name="Reranker Node", run_type="chain")
 def reranker_node(state: AgentState) -> AgentState:
     """
     LangGraph Reranker node:

@@ -15,6 +15,7 @@ Responsibilities:
 
 import time
 from typing import Any, Dict, List
+from langsmith import traceable
 
 from config import settings
 from agent.state import AgentState
@@ -32,6 +33,7 @@ RULES:
 """
 
 
+@traceable(name="Groq Reformulator Inference", run_type="llm")
 def _call_groq_reformulator(original_query: str, failure_reason: str, missing_sq: List[str]) -> str | None:
     """Calls Groq to generate a targeted expansion query with full key-bucket failover."""
     keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
@@ -67,6 +69,7 @@ def _call_groq_reformulator(original_query: str, failure_reason: str, missing_sq
     return None
 
 
+@traceable(name="Query Reformulator Node", run_type="chain")
 def reformulator_node(state: AgentState) -> AgentState:
     """
     LangGraph Reformulator node:

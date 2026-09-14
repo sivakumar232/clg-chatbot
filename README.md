@@ -239,9 +239,21 @@ uv run Ingestion/pipeline.py
 ---
 
 
-## 🔮 Roadmap & Next Steps
+## 🔮 Roadmap & Observability
 
-- [ ] **Hybrid Search**: Integrate BM25 sparse keyword search alongside dense Qdrant vector retrieval.
-- [ ] **Re-ranking**: Implement Jina Reranker v2 to re-rank top-K retrieved candidates before LLM context construction.
-- [ ] **Observability**: Add OpenTelemetry / LangSmith tracing for logging query latencies, token usage, and retrieval recall.
+- [x] **Hybrid Search**: Integrate BM25 sparse keyword search alongside dense Qdrant vector retrieval.
+- [x] **Re-ranking**: Implement Jina Reranker v2 to re-rank top-K retrieved candidates before LLM context construction.
+- [x] **Observability**: Added **LangSmith** tracing across LangGraph nodes, sub-queries, BM25, RRF fusion, reranker, and LLM providers.
 - [ ] **Interactive UI**: Build a lightweight Next.js / Streamlit web interface for student queries.
+
+### 🔍 Enabling LangSmith Tracing
+
+To enable end-to-end tracing and monitoring in LangSmith, add the following variables to your `.env` file:
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_...
+LANGSMITH_PROJECT=srkr-academic-advisor
+# Optional:
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```

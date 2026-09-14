@@ -22,10 +22,12 @@ The constant k=60:
 """
 
 from typing import Dict, List
+from langsmith import traceable
 
 from app.models import RetrievedChunk
 
 
+@traceable(name="Reciprocal Rank Fusion (RRF)", run_type="chain")
 def rrf_fuse(
     ranked_lists: List[List[RetrievedChunk]],
     k:            int = 60,

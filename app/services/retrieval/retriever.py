@@ -18,6 +18,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, List, Optional
+from langsmith import traceable
 
 # Ensure project root is importable (for config and Ingestion)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -55,6 +56,7 @@ class HybridRetriever:
     #  Public API
     # ──────────────────────────────────────────────────────────────────────
 
+    @traceable(name="Pass 1+2: Hybrid Retrieval", run_type="retriever")
     def retrieve(
         self,
         query:          str,
@@ -118,6 +120,7 @@ class HybridRetriever:
     #  Qdrant dense search
     # ──────────────────────────────────────────────────────────────────────
 
+    @traceable(name="Qdrant Dense Vector Search", run_type="retriever")
     def _dense_search(
         self,
         query_vector:  List[float],

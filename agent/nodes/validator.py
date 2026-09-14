@@ -15,6 +15,7 @@ Deterministic Reflection Gate:
 
 import re
 from typing import Any, Dict, List, Set, Tuple
+from langsmith import traceable
 
 from agent.state import AgentState, EvidenceStatus
 from app.models import RetrievedChunk
@@ -200,6 +201,7 @@ def _check_7_detect_contradictions(chunks: List[RetrievedChunk]) -> List[str]:
 # Master Validator Node
 # ─────────────────────────────────────────────────────────────────────────────
 
+@traceable(name="Evidence Validator Node", run_type="chain")
 def validator_node(state: AgentState) -> AgentState:
     """
     LangGraph Evidence Validator node:

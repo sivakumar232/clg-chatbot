@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 import requests
+from langsmith import traceable
 
 # Ensure project root is importable (for config)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -49,6 +50,7 @@ class JinaReranker:
             self.current_key = (self.current_key + 1) % len(self.api_keys)
             print(f"  Rotating to Jina API key {self.current_key + 1}/{len(self.api_keys)}")
 
+    @traceable(name="Pass 3: Jina Cross-Encoder Reranker", run_type="retriever")
     def rerank(
         self,
         query: str,

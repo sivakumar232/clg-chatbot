@@ -41,7 +41,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from langgraph.graph import StateGraph, END
+from langsmith import traceable
 
+import config  # Initializes LangSmith / LangChain environment variables
 from agent.state import AgentState, RouteType, EvidenceStatus, GuardStatus
 from agent.nodes import (
     cache_node,
@@ -193,12 +195,13 @@ def get_mermaid_diagram() -> str:
     return app.get_graph().draw_mermaid()
 
 
+@traceable(name="Agentic RAG Run", run_type="chain")
 def run_agent(
     query:        str,
     chat_history: list | None = None,
 ) -> AgentState:
     """
-    Executes the agentic RAG graph with initial state.
+    Executes the agentic RAG graph with initial state and LangSmith tracing.
     """
     initial_state: AgentState = {
         "query":                 query,

@@ -13,6 +13,7 @@ Performs 4 tasks in a single fast LLM call:
 import json
 import time
 from typing import Any, Dict, List, Optional
+from langsmith import traceable
 
 from config import settings
 from agent.state import AgentState, RouteType, QueryType
@@ -101,6 +102,7 @@ def _format_history_context(chat_history: List[Dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
+@traceable(name="Groq Planner LLM Inference", run_type="llm")
 def _call_groq_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
     """Calls Groq with strict JSON output format and key failover across bucket."""
     keys = settings.GROQ_API_KEYS or ([settings.GROQ_API_KEY] if settings.GROQ_API_KEY else [])
@@ -131,6 +133,7 @@ def _call_groq_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+@traceable(name="Gemini Planner Fallback Inference", run_type="llm")
 def _call_gemini_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
     """Fallback to Google Gemini for JSON planning with key failover across bucket."""
     keys = settings.GEMINI_API_KEYS or ([settings.GEMINI_API_KEY] if settings.GEMINI_API_KEY else [])
@@ -163,6 +166,7 @@ def _call_gemini_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+@traceable(name="Planner Node", run_type="chain")
 def planner_node(state: AgentState) -> AgentState:
     """
     LangGraph Planner node:

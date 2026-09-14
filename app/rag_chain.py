@@ -5,6 +5,7 @@ from app.services.retrieval.retriever import HybridRetriever
 from app.services.retrieval.reranker import JinaReranker
 from app.services.generation.generator import LLMGenerator
 from app.models import RetrievedChunk
+from langsmith import traceable
 
 
 class RAGPipeline:
@@ -32,6 +33,7 @@ class RAGPipeline:
         self.reranker  = JinaReranker()
         self.generator = LLMGenerator()
 
+    @traceable(name="RAG Pipeline Execution", run_type="chain")
     def run(
         self,
         query:        str,

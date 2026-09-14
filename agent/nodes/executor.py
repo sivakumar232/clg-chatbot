@@ -14,6 +14,7 @@ Responsibilities:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from typing import Any, Dict, List
+from langsmith import traceable
 
 from agent.state import AgentState
 from app.models import RetrievedChunk
@@ -31,6 +32,7 @@ def _get_retriever() -> HybridRetriever:
     return _RETRIEVER_INSTANCE
 
 
+@traceable(name="Single Sub-Query Retrieval", run_type="retriever")
 def _execute_single_subquery(sub_q: Dict[str, Any], retriever: HybridRetriever) -> List[RetrievedChunk]:
     """
     Executes a single hybrid retrieval pass for one sub-query.
@@ -100,6 +102,7 @@ def _merge_cumulative_chunks(
     return merged[:max_keep]
 
 
+@traceable(name="Parallel Executor Node", run_type="chain")
 def executor_node(state: AgentState) -> AgentState:
     """
     LangGraph Executor node:

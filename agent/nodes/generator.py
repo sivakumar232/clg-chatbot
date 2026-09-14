@@ -16,6 +16,7 @@ Responsibilities:
 
 import time
 from typing import Any, Dict, List, Tuple
+from langsmith import traceable
 
 from config import settings
 from agent.state import AgentState
@@ -113,6 +114,7 @@ def _build_generator_prompt(
     return prompt
 
 
+@traceable(name="Groq Generator LLM", run_type="llm")
 def _call_groq_generator(prompt: str) -> Tuple[str, str]:
     """Generates response via Groq with automatic key failover across bucket."""
     from groq import Groq
@@ -138,6 +140,7 @@ def _call_groq_generator(prompt: str) -> Tuple[str, str]:
     raise last_err or RuntimeError("No working Groq API keys available")
 
 
+@traceable(name="Gemini Generator LLM Fallback", run_type="llm")
 def _call_gemini_generator(prompt: str) -> Tuple[str, str]:
     """Generates response via Google Gemini fallback with automatic key failover across bucket."""
     from google import genai
@@ -159,6 +162,7 @@ def _call_gemini_generator(prompt: str) -> Tuple[str, str]:
     raise last_err or RuntimeError("No working Gemini API keys available")
 
 
+@traceable(name="Answer Generator Node", run_type="chain")
 def generator_node(state: AgentState) -> AgentState:
     """
     LangGraph Generator node:
