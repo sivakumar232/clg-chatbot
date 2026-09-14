@@ -1,8 +1,7 @@
 """
 agent/nodes/planner.py
 ──────────────────────
-Unified Query Planner node for Agentic RAG with full Logfire tracing,
-token metrics, and structured payload logging.
+Unified Query Planner node for Agentic RAG.
 
 Performs 4 tasks in a single fast LLM call:
 1. Coreference resolution (pronouns rewritten with chat history)
@@ -14,7 +13,6 @@ Performs 4 tasks in a single fast LLM call:
 import json
 import time
 from typing import Any, Dict, List, Optional
-import logfire
 
 from config import settings
 from agent.state import AgentState, RouteType, QueryType
@@ -29,8 +27,11 @@ TASKS:
    - If already self-contained, keep it unchanged.
 
 2. Route Classification:
-   - "direct": Conversational greetings (e.g. "hi", "hello", "how are you"), compliments, or queries totally out-of-scope of college academics (e.g., general world history, cooking, cricket, politics).
-   - "needs_retrieval": Any query seeking college information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty, HODs, administration, fees, exams, placements, admissions, campus facilities, clubs).
+   - "direct":
+     * Conversational greetings (e.g. "hi", "hello", "how are you"), compliments.
+     * Queries totally out-of-scope of college academics (e.g., general world history, cooking, cricket, politics).
+     * Privacy & Security Restrictions: Requests asking for personal phone numbers, mobile numbers, WhatsApp numbers, residential/home addresses, personal email IDs, salaries, or private personal data of faculty, staff, or students. Set intent category to "privacy_restriction".
+   - "needs_retrieval": Legitimate queries seeking academic college information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty designations, official department offices, administration, fees, exams, placements, admissions, campus facilities, clubs).
 
 3. Query Type:
    - "single_query": Focused question on one entity or topic.
@@ -109,32 +110,23 @@ def _call_groq_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
     from groq import Groq
     for key in keys:
         try:
-            with logfire.span("Groq Planner LLM Inference", model=settings.GROQ_MODEL) as llm_span:
-                client = Groq(api_key=key)
-                response = client.chat.completions.create(
-                    model=settings.GROQ_MODEL,
-                    messages=[
-                        {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt_text},
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.0,
-                    max_tokens=512,
-                )
-                
-                # Record token usage metrics if returned by Groq
-                if hasattr(response, "usage") and response.usage:
-                    llm_span.set_attribute("gen_ai.usage.prompt_tokens", response.usage.prompt_tokens)
-                    llm_span.set_attribute("gen_ai.usage.completion_tokens", response.usage.completion_tokens)
-                    llm_span.set_attribute("gen_ai.usage.total_tokens", response.usage.total_tokens)
-
-                content = response.choices[0].message.content or ""
-                parsed = json.loads(content)
-                llm_span.set_attribute("route", parsed.get("route"))
-                return parsed
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt_text},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                max_tokens=512,
+            )
+            content = response.choices[0].message.content or ""
+            parsed = json.loads(content)
+            return parsed
 
         except Exception as e:
-            logfire.warn("Groq planner key failed: {err}", err=str(e), exc_info=True)
+            print(f"Groq planner key failed: {e}")
             continue
     return None
 
@@ -148,27 +140,25 @@ def _call_gemini_planner(prompt_text: str) -> Optional[Dict[str, Any]]:
     from google import genai
     for key in keys:
         try:
-            with logfire.span("Gemini Planner Fallback Inference", model=settings.GEMINI_MODEL) as llm_span:
-                client = genai.Client(api_key=key)
-                combined_prompt = f"{PLANNER_SYSTEM_PROMPT}\n\nUser Input:\n{prompt_text}\n\nRespond with ONLY valid JSON."
-                resp = client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
-                    contents=combined_prompt,
-                )
-                raw_text = (resp.text or "").strip()
-                if raw_text.startswith("```json"):
-                    raw_text = raw_text[7:]
-                if raw_text.startswith("```"):
-                    raw_text = raw_text[3:]
-                if raw_text.endswith("```"):
-                    raw_text = raw_text[:-3]
+            client = genai.Client(api_key=key)
+            combined_prompt = f"{PLANNER_SYSTEM_PROMPT}\n\nUser Input:\n{prompt_text}\n\nRespond with ONLY valid JSON."
+            resp = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=combined_prompt,
+            )
+            raw_text = (resp.text or "").strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
 
-                parsed = json.loads(raw_text.strip())
-                llm_span.set_attribute("route", parsed.get("route"))
-                return parsed
+            parsed = json.loads(raw_text.strip())
+            return parsed
 
         except Exception as e:
-            logfire.warn("Gemini planner key failed: {err}", err=str(e), exc_info=True)
+            print(f"Gemini planner key failed: {e}")
             continue
     return None
 
@@ -182,104 +172,91 @@ def planner_node(state: AgentState) -> AgentState:
     raw_query = state.get("query", "").strip()
     chat_history = state.get("chat_history", [])
 
-    with logfire.span("Planner Node", raw_query=raw_query) as span:
-        history_str = _format_history_context(chat_history)
-        prompt_payload = (
-            f"Conversation History:\n{history_str}\n\n"
-            f"Latest User Query: \"{raw_query}\"\n\n"
-            f"Generate the JSON execution plan."
-        )
+    history_str = _format_history_context(chat_history)
+    prompt_payload = (
+        f"Conversation History:\n{history_str}\n\n"
+        f"Latest User Query: \"{raw_query}\"\n\n"
+        f"Generate the JSON execution plan."
+    )
 
-        t0 = time.time()
-        plan_dict = _call_groq_planner(prompt_payload)
-        provider_used = "Groq"
+    t0 = time.time()
+    plan_dict = _call_groq_planner(prompt_payload)
+    provider_used = "Groq"
 
-        if plan_dict is None:
-            plan_dict = _call_gemini_planner(prompt_payload)
-            provider_used = "Gemini"
+    if plan_dict is None:
+        plan_dict = _call_gemini_planner(prompt_payload)
+        provider_used = "Gemini"
 
-        elapsed = time.time() - t0
+    elapsed = time.time() - t0
 
-        # ── Fallback Resiliency ──────────────────────────────────────────────────
-        if not plan_dict or not isinstance(plan_dict, dict):
-            logfire.warn("Planner failed to produce valid JSON. Using safe fallback.", query=raw_query)
-            span.set_attribute("status", "fallback")
-            return {
-                "rewritten_query": raw_query,
-                "route": RouteType.NEEDS_RETRIEVAL,
-                "query_type": QueryType.SINGLE,
-                "intent": {"category": "general", "fallback": True},
-                "sub_queries": [{"query": raw_query, "metadata_filter": None}],
-            }
-
-        # ── Parse and Validate Fields ────────────────────────────────────────────
-        rewritten_query = plan_dict.get("rewritten_query") or raw_query
-        
-        # Route
-        raw_route = str(plan_dict.get("route", "")).lower()
-        if "direct" in raw_route:
-            route = RouteType.DIRECT
-        else:
-            route = RouteType.NEEDS_RETRIEVAL
-
-        # Query Type
-        raw_type = str(plan_dict.get("query_type", "")).lower()
-        if "multi_hop" in raw_type:
-            query_type = QueryType.MULTI_HOP
-        elif "sub_query" in raw_type:
-            query_type = QueryType.SUB
-        else:
-            query_type = QueryType.SINGLE
-
-        intent = plan_dict.get("intent") or {}
-        
-        # Sub-queries
-        sub_queries = []
-        if route == RouteType.NEEDS_RETRIEVAL:
-            raw_subs = plan_dict.get("sub_queries") or []
-            for item in raw_subs[:4]:  # Bounded to max 4 sub-queries
-                if isinstance(item, dict) and item.get("query"):
-                    sub_queries.append({
-                        "query": str(item["query"]).strip(),
-                        "metadata_filter": item.get("metadata_filter"),
-                    })
-            
-            # Ensure at least 1 sub-query exists if needs_retrieval
-            if not sub_queries:
-                sub_queries.append({
-                    "query": rewritten_query,
-                    "metadata_filter": None,
-                })
-
-        # ── Logfire Attributes & Metrics ─────────────────────────────────────────
-        span.set_attribute("provider", provider_used)
-        span.set_attribute("latency_seconds", round(elapsed, 3))
-        span.set_attribute("route", route.value)
-        span.set_attribute("query_type", query_type.value)
-        span.set_attribute("rewritten_query", rewritten_query)
-        span.set_attribute("intent.category", intent.get("category"))
-        span.set_attribute("intent.department", intent.get("department"))
-        span.set_attribute("intent.regulation", intent.get("regulation"))
-        span.set_attribute("sub_queries_count", len(sub_queries))
-
-        print("=" * 60)
-        print(f"  PLANNER COMPLETE ({provider_used} in {elapsed:.2f}s)")
-        print("=" * 60)
-        print(f"  • Raw Query       : \"{raw_query}\"")
-        print(f"  • Rewritten Query : \"{rewritten_query}\"")
-        print(f"  • Route Decision  : {route.value}")
-        print(f"  • Query Type      : {query_type.value}")
-        print(f"  • Intent Category : {intent.get('category')}")
-        print(f"  • Sub-Queries ({len(sub_queries)}):")
-        for idx, sq in enumerate(sub_queries, 1):
-            flt_str = f" | Filter: {sq['metadata_filter']}" if sq.get("metadata_filter") else ""
-            print(f"    [{idx}] \"{sq['query']}\"{flt_str}")
-        print("=" * 60 + "\n")
-
+    # ── Fallback Resiliency ──────────────────────────────────────────────────
+    if not plan_dict or not isinstance(plan_dict, dict):
+        print(f"Planner failed to produce valid JSON for query: '{raw_query}'. Using safe fallback.")
         return {
-            "rewritten_query": rewritten_query,
-            "route": route,
-            "query_type": query_type,
-            "intent": intent,
-            "sub_queries": sub_queries,
+            "rewritten_query": raw_query,
+            "route": RouteType.NEEDS_RETRIEVAL,
+            "query_type": QueryType.SINGLE,
+            "intent": {"category": "general", "fallback": True},
+            "sub_queries": [{"query": raw_query, "metadata_filter": None}],
         }
+
+    # ── Parse and Validate Fields ────────────────────────────────────────────
+    rewritten_query = plan_dict.get("rewritten_query") or raw_query
+    
+    # Route
+    raw_route = str(plan_dict.get("route", "")).lower()
+    if "direct" in raw_route:
+        route = RouteType.DIRECT
+    else:
+        route = RouteType.NEEDS_RETRIEVAL
+
+    # Query Type
+    raw_type = str(plan_dict.get("query_type", "")).lower()
+    if "multi_hop" in raw_type:
+        query_type = QueryType.MULTI_HOP
+    elif "sub_query" in raw_type:
+        query_type = QueryType.SUB
+    else:
+        query_type = QueryType.SINGLE
+
+    intent = plan_dict.get("intent") or {}
+    
+    # Sub-queries
+    sub_queries = []
+    if route == RouteType.NEEDS_RETRIEVAL:
+        raw_subs = plan_dict.get("sub_queries") or []
+        for item in raw_subs[:4]:  # Bounded to max 4 sub-queries
+            if isinstance(item, dict) and item.get("query"):
+                sub_queries.append({
+                    "query": str(item["query"]).strip(),
+                    "metadata_filter": item.get("metadata_filter"),
+                })
+        
+        # Ensure at least 1 sub-query exists if needs_retrieval
+        if not sub_queries:
+            sub_queries.append({
+                "query": rewritten_query,
+                "metadata_filter": None,
+            })
+
+    print("=" * 60)
+    print(f"  PLANNER COMPLETE ({provider_used} in {elapsed:.2f}s)")
+    print("=" * 60)
+    print(f"  • Raw Query       : \"{raw_query}\"")
+    print(f"  • Rewritten Query : \"{rewritten_query}\"")
+    print(f"  • Route Decision  : {route.value}")
+    print(f"  • Query Type      : {query_type.value}")
+    print(f"  • Intent Category : {intent.get('category')}")
+    print(f"  • Sub-Queries ({len(sub_queries)}):")
+    for idx, sq in enumerate(sub_queries, 1):
+        flt_str = f" | Filter: {sq['metadata_filter']}" if sq.get("metadata_filter") else ""
+        print(f"    [{idx}] \"{sq['query']}\"{flt_str}")
+    print("=" * 60 + "\n")
+
+    return {
+        "rewritten_query": rewritten_query,
+        "route": route,
+        "query_type": query_type,
+        "intent": intent,
+        "sub_queries": sub_queries,
+    }

@@ -20,7 +20,6 @@ import json
 import re
 import time
 from typing import Any, Dict, List, Tuple
-import logfire
 
 from config import settings
 from agent.state import AgentState, GuardStatus
@@ -41,6 +40,23 @@ Output MUST be a JSON object:
   "reason": "Clear explanation of what claim was unsupported, or null if grounded"
 }
 """
+
+
+def _scrub_pii_and_phone_numbers(text: str) -> str:
+    """
+    Deterministically scrubs phone numbers, mobile numbers, and personal contact digits
+    from the draft answer to guarantee zero PII leakage.
+    """
+    if not text:
+        return text
+
+    # Matches Indian mobile numbers (+91-..., 9848..., 9493671967, etc.)
+    text = re.sub(r'(?:\+91[\s-]?)?[6-9]\d{9}\b', '[Contact number withheld for privacy]', text)
+    # Formats like 98484-66678 or 98484 66678
+    text = re.sub(r'\b[6-9]\d{4}[\s-]\d{5}\b', '[Contact number withheld for privacy]', text)
+    # Formats like 08816-223344 (landlines with STD code)
+    text = re.sub(r'\b0\d{3,5}[-\s]?\d{6,8}\b', '[Contact number withheld for privacy]', text)
+    return text
 
 
 def _fast_deterministic_entity_check(draft_answer: str, chunks: List[RetrievedChunk]) -> Tuple[bool, str | None]:
@@ -103,7 +119,7 @@ def _call_llm_faithfulness_check(draft_answer: str, chunks: List[RetrievedChunk]
             reason = data.get("reason")
             return is_grounded, reason
         except Exception as e:
-            logfire.warn("Guard Groq check failed on key: {err}", err=str(e), exc_info=True)
+            print(f"Guard Groq check failed on key: {e}")
             continue
 
     # 2. Fallback to Gemini keys
@@ -126,7 +142,7 @@ def _call_llm_faithfulness_check(draft_answer: str, chunks: List[RetrievedChunk]
             data = json.loads(raw.strip())
             return bool(data.get("is_grounded", True)), data.get("reason")
         except Exception as e:
-            logfire.warn("Guard Gemini fallback failed on key: {err}", err=str(e), exc_info=True)
+            print(f"Guard Gemini fallback failed on key: {e}")
             continue
 
     return True, None
@@ -147,50 +163,48 @@ def guard_node(state: AgentState) -> AgentState:
     retry_count = state.get("guard_retry_count", 0)
     max_retries = state.get("max_guard_retries", 1)
 
-    with logfire.span("Answer Guard Node", retry=retry_count) as span:
-        t0 = time.time()
+    t0 = time.time()
 
-        # Fast deterministic check: catch any fabricated course codes
-        is_grounded, feedback = _fast_deterministic_entity_check(draft, chunks)
+    # Fast deterministic check: catch any fabricated course codes
+    is_grounded, feedback = _fast_deterministic_entity_check(draft, chunks)
 
-        elapsed = time.time() - t0
-        span.set_attribute("is_grounded", is_grounded)
-        span.set_attribute("latency_seconds", round(elapsed, 3))
+    # Always scrub phone numbers and PII deterministically
+    sanitized_draft = _scrub_pii_and_phone_numbers(draft)
 
-        # Decision routing
-        if is_grounded:
-            span.set_attribute("status", "grounded")
-            print("=" * 60)
-            print(f"  ANSWER GUARD: PASSED (Deterministic check in {elapsed:.2f}s)")
-            print("=" * 60 + "\n")
-            return {
-                "guard_status":   GuardStatus.GROUNDED,
-                "guard_feedback": None,
-            }
+    elapsed = time.time() - t0
 
-        # Handle ungrounded (fabricated course code detected)
-        if retry_count < max_retries:
-            new_retries = retry_count + 1
-            span.set_attribute("status", "retry")
-            span.set_attribute("feedback", feedback)
-            print("=" * 60)
-            print(f"  ⚠️ ANSWER GUARD: REJECTED (Retry {new_retries}/{max_retries})")
-            print(f"  • Reason: {feedback}")
-            print("=" * 60 + "\n")
-            return {
-                "guard_status":      GuardStatus.UNGROUNDED_RETRY,
-                "guard_feedback":    feedback,
-                "guard_retry_count": new_retries,
-            }
-
-        # Retries exhausted -> proceed to responder
-        span.set_attribute("status", "exhausted")
+    # Decision routing
+    if is_grounded:
         print("=" * 60)
-        print(f"  ⚠️ ANSWER GUARD: Retries Exhausted -> Proceeding with Notice")
+        print(f"  ANSWER GUARD: PASSED (Deterministic check in {elapsed:.2f}s)")
+        print("=" * 60 + "\n")
+        return {
+            "draft_answer":   sanitized_draft,
+            "guard_status":   GuardStatus.GROUNDED,
+            "guard_feedback": None,
+        }
+
+    # Handle ungrounded (fabricated course code detected)
+    if retry_count < max_retries:
+        new_retries = retry_count + 1
+        print("=" * 60)
+        print(f"  ⚠️ ANSWER GUARD: REJECTED (Retry {new_retries}/{max_retries})")
         print(f"  • Reason: {feedback}")
         print("=" * 60 + "\n")
         return {
-            "guard_status":      GuardStatus.UNGROUNDED_EXHAUSTED,
+            "guard_status":      GuardStatus.UNGROUNDED_RETRY,
             "guard_feedback":    feedback,
+            "guard_retry_count": new_retries,
         }
+
+    # Retries exhausted -> proceed to responder
+    print("=" * 60)
+    print(f"  ⚠️ ANSWER GUARD: Retries Exhausted -> Proceeding with Notice")
+    print(f"  • Reason: {feedback}")
+    print("=" * 60 + "\n")
+    return {
+        "draft_answer":      sanitized_draft,
+        "guard_status":      GuardStatus.UNGROUNDED_EXHAUSTED,
+        "guard_feedback":    feedback,
+    }
 

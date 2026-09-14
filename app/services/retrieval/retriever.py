@@ -18,7 +18,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, List, Optional
-import logfire
 
 # Ensure project root is importable (for config and Ingestion)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -56,7 +55,6 @@ class HybridRetriever:
     #  Public API
     # ──────────────────────────────────────────────────────────────────────
 
-    @logfire.instrument("Pass 1+2: Hybrid Retrieval", extract_args=False)
     def retrieve(
         self,
         query:          str,
@@ -120,7 +118,6 @@ class HybridRetriever:
     #  Qdrant dense search
     # ──────────────────────────────────────────────────────────────────────
 
-    @logfire.instrument("Qdrant Dense Vector Search", extract_args=False)
     def _dense_search(
         self,
         query_vector:  List[float],

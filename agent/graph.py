@@ -198,25 +198,19 @@ def run_agent(
     chat_history: list | None = None,
 ) -> AgentState:
     """
-    Executes the agentic RAG graph with initial state and full Logfire trace.
+    Executes the agentic RAG graph with initial state.
     """
-    import logfire
-    with logfire.span("Agentic RAG Run", query=query) as run_span:
-        initial_state: AgentState = {
-            "query":                 query,
-            "chat_history":          chat_history or [],
-            "retrieval_retry_count": 0,
-            "max_retrieval_retries": 2,
-            "guard_retry_count":     0,
-            "max_guard_retries":     1,
-            "accumulated_chunks":    [],
-            "degraded":              False,
-        }
-        res = app.invoke(initial_state)
-        run_span.set_attribute("route", str(res.get("route")))
-        run_span.set_attribute("provider", str(res.get("provider")))
-        run_span.set_attribute("degraded", bool(res.get("degraded", False)))
-        return res
+    initial_state: AgentState = {
+        "query":                 query,
+        "chat_history":          chat_history or [],
+        "retrieval_retry_count": 0,
+        "max_retrieval_retries": 2,
+        "guard_retry_count":     0,
+        "max_guard_retries":     1,
+        "accumulated_chunks":    [],
+        "degraded":              False,
+    }
+    return app.invoke(initial_state)
 
 
 if __name__ == "__main__":

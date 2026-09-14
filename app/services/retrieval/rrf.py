@@ -22,12 +22,10 @@ The constant k=60:
 """
 
 from typing import Dict, List
-import logfire
 
 from app.models import RetrievedChunk
 
 
-@logfire.instrument("Reciprocal Rank Fusion (RRF)", extract_args=False)
 def rrf_fuse(
     ranked_lists: List[List[RetrievedChunk]],
     k:            int = 60,

@@ -15,7 +15,6 @@ Deterministic Reflection Gate:
 
 import re
 from typing import Any, Dict, List, Set, Tuple
-import logfire
 
 from agent.state import AgentState, EvidenceStatus
 from app.models import RetrievedChunk
@@ -212,83 +211,70 @@ def validator_node(state: AgentState) -> AgentState:
     retry_count = state.get("retrieval_retry_count", 0)
     max_retries = state.get("max_retrieval_retries", 1)
 
-    with logfire.span("Evidence Validator Node", chunk_count=len(chunks), retry=retry_count) as span:
+    # ── 1. Zero-Chunk Fast Fail ──────────────────────────────────────────
+    ok1, reason1 = _check_1_zero_chunks(chunks)
+    if not ok1:
+        return _handle_failure(retry_count, max_retries, reason1)
 
-        # ── 1. Zero-Chunk Fast Fail ──────────────────────────────────────────
-        ok1, reason1 = _check_1_zero_chunks(chunks)
-        if not ok1:
-            return _handle_failure(retry_count, max_retries, reason1, span)
+    # ── 2. Hard Score Floor ──────────────────────────────────────────────
+    ok2, reason2 = _check_2_score_floor(chunks)
+    if not ok2:
+        return _handle_failure(retry_count, max_retries, reason2)
 
-        # ── 2. Hard Score Floor ──────────────────────────────────────────────
-        ok2, reason2 = _check_2_score_floor(chunks)
-        if not ok2:
-            return _handle_failure(retry_count, max_retries, reason2, span)
+    # ── 3. Redundancy & Diversity Pruning (Non-blocking) ─────────────────
+    pruned_chunks = _check_3_prune_redundancy(chunks)
 
-        # ── 3. Redundancy & Diversity Pruning (Non-blocking) ─────────────────
-        pruned_chunks = _check_3_prune_redundancy(chunks)
-        span.set_attribute("pruned_chunks_count", len(pruned_chunks))
+    # ── 4. Per-Sub-Query Coverage ────────────────────────────────────────
+    ok4, missing_subqueries = _check_4_subquery_coverage(pruned_chunks, sub_queries)
+    if not ok4:
+        reason4 = f"Incomplete evidence: missing sub-queries {missing_subqueries}"
+        return _handle_failure(
+            retry_count, max_retries, reason4,
+            missing_sq=missing_subqueries, pruned=pruned_chunks
+        )
 
-        # ── 4. Per-Sub-Query Coverage ────────────────────────────────────────
-        ok4, missing_subqueries = _check_4_subquery_coverage(pruned_chunks, sub_queries)
-        if not ok4:
-            reason4 = f"Incomplete evidence: missing sub-queries {missing_subqueries}"
-            return _handle_failure(
-                retry_count, max_retries, reason4, span,
-                missing_sq=missing_subqueries, pruned=pruned_chunks
-            )
+    # ── 5. Entity Coverage ───────────────────────────────────────────────
+    ok5, reason5 = _check_5_entity_coverage(pruned_chunks, intent)
+    if not ok5:
+        return _handle_failure(retry_count, max_retries, reason5, pruned=pruned_chunks)
 
-        # ── 5. Entity Coverage ───────────────────────────────────────────────
-        ok5, reason5 = _check_5_entity_coverage(pruned_chunks, intent)
-        if not ok5:
-            return _handle_failure(retry_count, max_retries, reason5, span, pruned=pruned_chunks)
+    # ── 6. Aggregate / Group Coverage ────────────────────────────────────
+    ok6, reason6 = _check_6_aggregate_coverage(pruned_chunks, intent)
+    if not ok6:
+        return _handle_failure(retry_count, max_retries, reason6, pruned=pruned_chunks)
 
-        # ── 6. Aggregate / Group Coverage ────────────────────────────────────
-        ok6, reason6 = _check_6_aggregate_coverage(pruned_chunks, intent)
-        if not ok6:
-            return _handle_failure(retry_count, max_retries, reason6, span, pruned=pruned_chunks)
+    # ── 7. Lightweight Contradiction Detection (Non-blocking) ────────────
+    contradictions = _check_7_detect_contradictions(pruned_chunks)
 
-        # ── 7. Lightweight Contradiction Detection (Non-blocking) ────────────
-        contradictions = _check_7_detect_contradictions(pruned_chunks)
-        if contradictions:
-            span.set_attribute("contradictions", contradictions)
+    # ── ALL CHECKS PASSED ────────────────────────────────────────────────
+    print("=" * 60)
+    print("  EVIDENCE VALIDATOR: PASSED (All 7 Checks Verified)")
+    print("=" * 60)
+    print(f"  • Chunks Evaluated : {len(chunks)} -> Pruned to: {len(pruned_chunks)}")
+    print(f"  • Top Score        : {max(c.score for c in chunks):.4f}")
+    print(f"  • Missing Sub-Q    : {missing_subqueries if missing_subqueries else 'None'}")
+    print(f"  • Contradictions   : {contradictions if contradictions else 'None'}")
+    print("=" * 60 + "\n")
 
-        # ── ALL CHECKS PASSED ────────────────────────────────────────────────
-        span.set_attribute("status", "sufficient")
-        span.set_attribute("evidence_status", EvidenceStatus.SUFFICIENT.value)
-
-        print("=" * 60)
-        print("  EVIDENCE VALIDATOR: PASSED (All 7 Checks Verified)")
-        print("=" * 60)
-        print(f"  • Chunks Evaluated : {len(chunks)} -> Pruned to: {len(pruned_chunks)}")
-        print(f"  • Top Score        : {max(c.score for c in chunks):.4f}")
-        print(f"  • Missing Sub-Q    : {missing_subqueries if missing_subqueries else 'None'}")
-        print(f"  • Contradictions   : {contradictions if contradictions else 'None'}")
-        print("=" * 60 + "\n")
-
-        return {
-            "evidence_status":     EvidenceStatus.SUFFICIENT,
-            "pruned_chunks":       pruned_chunks,
-            "missing_sub_queries": missing_subqueries,
-            "contradictions":      contradictions,
-            "degraded":            False,
-            "degraded_reason":     None,
-        }
+    return {
+        "evidence_status":     EvidenceStatus.SUFFICIENT,
+        "pruned_chunks":       pruned_chunks,
+        "missing_sub_queries": missing_subqueries,
+        "contradictions":      contradictions,
+        "degraded":            False,
+        "degraded_reason":     None,
+    }
 
 
 def _handle_failure(
     retry_count: int,
     max_retries: int,
     reason: str,
-    span: Any,
     missing_sq: List[str] = None,
     pruned: List[RetrievedChunk] = None,
 ) -> Dict[str, Any]:
     """Helper to route failure cleanly to retry or degraded mode."""
-    span.set_attribute("failure_reason", reason)
-
     if retry_count < max_retries:
-        span.set_attribute("status", "retry")
-        span.set_attribute("evidence_status", EvidenceStatus.INSUFFICIENT_RETRY.value)
         print(f"  ⚠️ Evidence Check Failed (Will Retry): {reason}")
         return {
             "evidence_status":     EvidenceStatus.INSUFFICIENT_RETRY,
@@ -299,8 +285,6 @@ def _handle_failure(
             "contradictions":      [],
         }
 
-    span.set_attribute("status", "degraded")
-    span.set_attribute("evidence_status", EvidenceStatus.INSUFFICIENT_EXHAUSTED.value)
     print(f"  ⚠️ Evidence Check Failed (Retries Exhausted -> Degraded): {reason}")
     return {
         "evidence_status":     EvidenceStatus.INSUFFICIENT_EXHAUSTED,

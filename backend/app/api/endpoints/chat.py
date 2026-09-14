@@ -8,12 +8,14 @@ Server-Sent Events (SSE) as each node in the graph executes.
 
 import asyncio
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-import logfire
+
+logger = logging.getLogger(__name__)
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -164,7 +166,7 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
         })
 
     except Exception as e:
-        logfire.error("Streaming error in LangGraph: {err}", err=str(e), exc_info=True)
+        logger.exception("Streaming error in LangGraph: %s", str(e))
         yield _format_sse({
             "type": "error",
             "message": f"An error occurred during pipeline execution: {str(e)}",

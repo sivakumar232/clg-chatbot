@@ -1,14 +1,11 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-import logfire
 
 ROOT_DIR = Path(__file__).resolve().parent
 load_dotenv(ROOT_DIR / ".env")
 
 class Settings:
-    LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN")
-    
     # Gemini keys bucket (comma-separated or single)
     _raw_gemini = os.getenv("GEMINI_API_KEYS") or os.getenv("GEMINI_API_KEY") or ""
     GEMINI_API_KEYS: list[str] = [k.strip() for k in _raw_gemini.split(",") if k.strip()]
@@ -36,11 +33,3 @@ class Settings:
     EMBEDDING_DIM = 1024
     
 settings = Settings()
-
-# Centralized Logfire configuration
-logfire.configure(
-    service_name="srkr_academic_advisor",
-    send_to_logfire=True if settings.LOGFIRE_TOKEN else "if-token-present",
-    token=settings.LOGFIRE_TOKEN or None,
-    inspect_arguments=False,
-)

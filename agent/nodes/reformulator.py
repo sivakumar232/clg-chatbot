@@ -15,7 +15,6 @@ Responsibilities:
 
 import time
 from typing import Any, Dict, List
-import logfire
 
 from config import settings
 from agent.state import AgentState
@@ -63,7 +62,7 @@ def _call_groq_reformulator(original_query: str, failure_reason: str, missing_sq
             text = (response.choices[0].message.content or "").strip().replace('"', '')
             return text if text else None
         except Exception as e:
-            logfire.warn(f"Groq reformulator key failed: {e}", exc_info=True)
+            print(f"Groq reformulator key failed: {e}")
             continue
     return None
 
@@ -80,40 +79,35 @@ def reformulator_node(state: AgentState) -> AgentState:
     current_retries = state.get("retrieval_retry_count", 0)
     new_retry_count = current_retries + 1
 
-    with logfire.span("Query Reformulator Node", retry_count=new_retry_count) as span:
-        t0 = time.time()
-        reformulated = ""
+    t0 = time.time()
+    reformulated = ""
 
-        # Case 1: If specific sub-queries were missing, prioritize them directly
-        if missing_sq:
-            reformulated = " ".join(missing_sq)
+    # Case 1: If specific sub-queries were missing, prioritize them directly
+    if missing_sq:
+        reformulated = " ".join(missing_sq)
 
-        # Case 2: Use LLM reformulation if missing_sq is empty or to expand keywords
-        if not reformulated:
-            reformulated = _call_groq_reformulator(original_query, failure_reason, missing_sq) or ""
+    # Case 2: Use LLM reformulation if missing_sq is empty or to expand keywords
+    if not reformulated:
+        reformulated = _call_groq_reformulator(original_query, failure_reason, missing_sq) or ""
 
-        # Case 3: Deterministic fallback if LLM returned empty
-        if not reformulated:
-            dept = state.get("intent", {}).get("department", "")
-            reg = state.get("intent", {}).get("regulation", "")
-            tokens = [original_query, dept, reg, "SRKR Engineering College"]
-            reformulated = " ".join(t for t in tokens if t)
+    # Case 3: Deterministic fallback if LLM returned empty
+    if not reformulated:
+        dept = state.get("intent", {}).get("department", "")
+        reg = state.get("intent", {}).get("regulation", "")
+        tokens = [original_query, dept, reg, "SRKR Engineering College"]
+        reformulated = " ".join(t for t in tokens if t)
 
-        elapsed = time.time() - t0
-        span.set_attribute("original_query", original_query)
-        span.set_attribute("reformulated_query", reformulated)
-        span.set_attribute("reason", failure_reason)
-        span.set_attribute("latency_seconds", round(elapsed, 3))
+    elapsed = time.time() - t0
 
-        print("=" * 60)
-        print(f"  QUERY REFORMULATOR COMPLETE (Attempt {new_retry_count} in {elapsed:.2f}s)")
-        print("=" * 60)
-        print(f"  • Diagnosed Reason   : {failure_reason}")
-        print(f"  • Original Query     : \"{original_query}\"")
-        print(f"  • Reformulated Query : \"{reformulated}\"")
-        print("=" * 60 + "\n")
+    print("=" * 60)
+    print(f"  QUERY REFORMULATOR COMPLETE (Attempt {new_retry_count} in {elapsed:.2f}s)")
+    print("=" * 60)
+    print(f"  • Diagnosed Reason   : {failure_reason}")
+    print(f"  • Original Query     : \"{original_query}\"")
+    print(f"  • Reformulated Query : \"{reformulated}\"")
+    print("=" * 60 + "\n")
 
-        return {
-            "reformulated_query":    reformulated,
-            "retrieval_retry_count": new_retry_count,
-        }
+    return {
+        "reformulated_query":    reformulated,
+        "retrieval_retry_count": new_retry_count,
+    }

@@ -15,7 +15,6 @@ Responsibilities:
 """
 
 from typing import Any, Dict, List
-import logfire
 
 from agent.state import AgentState, RouteType
 
@@ -24,6 +23,13 @@ def _build_direct_response(query: str, intent: Dict[str, Any]) -> str:
     """Generates polite, professional responses for conversational or out-of-scope inputs."""
     category = str(intent.get("category", "")).lower()
     q_lower = query.lower().strip()
+
+    # Privacy restriction refusal
+    if "privacy" in category or any(w in q_lower for w in ["phone number", "mobile number", "whatsapp", "home address", "residential address", "salary"]):
+        return (
+            "For privacy and security policies, personal contact information (such as personal phone numbers, mobile numbers, residential addresses, and private records) of faculty, staff, and students is not disclosed.\n\n"
+            "If you need to contact a faculty member or department, please reach out through official campus email or visit the respective department office during working hours."
+        )
 
     # Out-of-scope rejection
     if "out_of_scope" in category or any(w in q_lower for w in ["biryani", "recipe", "cricket", "movie", "weather", "song", "essay"]):

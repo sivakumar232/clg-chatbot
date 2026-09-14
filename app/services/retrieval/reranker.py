@@ -4,7 +4,6 @@ import time
 from pathlib import Path
 from typing import List, Optional
 import requests
-import logfire
 
 # Ensure project root is importable (for config)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -50,7 +49,6 @@ class JinaReranker:
             self.current_key = (self.current_key + 1) % len(self.api_keys)
             print(f"  Rotating to Jina API key {self.current_key + 1}/{len(self.api_keys)}")
 
-    @logfire.instrument("Pass 3: Jina Cross-Encoder Reranker", extract_args=False)
     def rerank(
         self,
         query: str,

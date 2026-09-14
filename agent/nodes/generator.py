@@ -16,7 +16,6 @@ Responsibilities:
 
 import time
 from typing import Any, Dict, List, Tuple
-import logfire
 
 from config import settings
 from agent.state import AgentState
@@ -48,6 +47,11 @@ STYLE & PRESENTATION GUIDELINES:
    - Mentally verify every course code, credit count, faculty name, and regulation number against the Context Blocks.
    - If a specific fact (e.g., a course code or credit) does NOT appear in any Context Block, do NOT include it.
    - Do NOT mention this verification step in your response — just produce clean, grounded output.
+
+5. Strict Privacy & PII Protection:
+   - NEVER output phone numbers, mobile numbers, WhatsApp numbers, residential/home addresses, personal email addresses, salary numbers, or private personal details under ANY circumstances, EVEN IF THEY APPEAR in the Context Blocks or disclosure PDFs.
+   - Only official institutional email addresses or campus office locations may be shared.
+   - If the user asks for phone numbers, residential addresses, or private details, state that personal contact numbers are private and not disclosed, and direct them to official departmental email or campus offices.
 """
 
 
@@ -178,43 +182,38 @@ def generator_node(state: AgentState) -> AgentState:
         guard_feedback=guard_feedback,
     )
 
-    with logfire.span("Answer Generator Node", chunks_used=len(chunks), degraded=degraded) as span:
-        t0 = time.time()
-        answer = ""
-        provider = "Unknown"
+    t0 = time.time()
+    answer = ""
+    provider = "Unknown"
 
-        # 1. Primary: Groq
-        if settings.GROQ_API_KEY:
-            try:
-                answer, provider = _call_groq_generator(prompt)
-            except Exception as e:
-                logfire.warn("Groq generator failed: {err}", err=str(e), exc_info=True)
-                print(f"  ⚠️ Groq generation failed: {e}. Switching to Gemini fallback...")
+    # 1. Primary: Groq
+    if settings.GROQ_API_KEY:
+        try:
+            answer, provider = _call_groq_generator(prompt)
+        except Exception as e:
+            print(f"  ⚠️ Groq generation failed: {e}. Switching to Gemini fallback...")
 
-        # 2. Fallback: Gemini
-        if not answer and settings.GEMINI_API_KEY:
-            try:
-                answer, provider = _call_gemini_generator(prompt)
-            except Exception as e:
-                logfire.error("Gemini generator fallback failed: {err}", err=str(e), exc_info=True)
-                raise RuntimeError(f"All LLM generation providers failed: {e}")
+    # 2. Fallback: Gemini
+    if not answer and settings.GEMINI_API_KEY:
+        try:
+            answer, provider = _call_gemini_generator(prompt)
+        except Exception as e:
+            print(f"  ⚠️ Gemini generator fallback failed: {e}")
+            raise RuntimeError(f"All LLM generation providers failed: {e}")
 
-        elapsed = time.time() - t0
-        span.set_attribute("provider", provider)
-        span.set_attribute("latency_seconds", round(elapsed, 3))
-        span.set_attribute("answer_length", len(answer))
+    elapsed = time.time() - t0
 
-        print("=" * 60)
-        print(f"  GENERATOR COMPLETE ({provider} in {elapsed:.2f}s)")
-        print("=" * 60)
-        print(f"  • Chunks Used     : {len(chunks)}")
-        print(f"  • Degraded Mode   : {degraded}")
-        print(f"  • Draft Answer Preview:")
-        preview = answer.strip().replace("\n", " ")[:160]
-        print(f"    \"{preview}...\"\n")
-        print("=" * 60 + "\n")
+    print("=" * 60)
+    print(f"  GENERATOR COMPLETE ({provider} in {elapsed:.2f}s)")
+    print("=" * 60)
+    print(f"  • Chunks Used     : {len(chunks)}")
+    print(f"  • Degraded Mode   : {degraded}")
+    print(f"  • Draft Answer Preview:")
+    preview = answer.strip().replace("\n", " ")[:160]
+    print(f"    \"{preview}...\"\n")
+    print("=" * 60 + "\n")
 
-        return {
-            "draft_answer": answer,
-            "provider":     provider,
-        }
+    return {
+        "draft_answer": answer,
+        "provider":     provider,
+    }

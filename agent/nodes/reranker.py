@@ -12,7 +12,6 @@ Responsibilities:
 
 import time
 from typing import List
-import logfire
 
 from agent.state import AgentState
 from app.models import RetrievedChunk
@@ -61,38 +60,27 @@ def reranker_node(state: AgentState) -> AgentState:
     reranker = _get_reranker()
     top_n = _compute_top_n(state)
 
-    with logfire.span(
-        "Reranker Node",
-        input_chunks=len(candidate_chunks),
+    t0 = time.time()
+
+    # Score top candidates down to dynamic top_n precision chunks
+    reranked = reranker.rerank(
         query=scoring_query,
+        chunks=candidate_chunks,
         top_n=top_n,
-    ) as span:
-        t0 = time.time()
+    )
 
-        # Score top candidates down to dynamic top_n precision chunks
-        reranked = reranker.rerank(
-            query=scoring_query,
-            chunks=candidate_chunks,
-            top_n=top_n,
-        )
+    elapsed = time.time() - t0
 
-        elapsed = time.time() - t0
-        top_score = reranked[0].score if reranked else 0.0
+    print("=" * 60)
+    print(f"  RERANKER COMPLETE: {len(candidate_chunks)} -> Top {len(reranked)} (top_n={top_n}) in {elapsed:.2f}s")
+    print("=" * 60)
+    for i, chunk in enumerate(reranked, 1):
+        snippet = chunk.text.replace("\n", " ").strip()[:100]
+        print(f"  [{i}] Score: {chunk.score:.4f} | {chunk.source}")
+        print(f"      \"{snippet}...\"")
+    print("=" * 60 + "\n")
 
-        span.set_attribute("reranked_count", len(reranked))
-        span.set_attribute("top_score", round(top_score, 4))
-        span.set_attribute("latency_seconds", round(elapsed, 3))
-
-        print("=" * 60)
-        print(f"  RERANKER COMPLETE: {len(candidate_chunks)} -> Top {len(reranked)} (top_n={top_n}) in {elapsed:.2f}s")
-        print("=" * 60)
-        for i, chunk in enumerate(reranked, 1):
-            snippet = chunk.text.replace("\n", " ").strip()[:100]
-            print(f"  [{i}] Score: {chunk.score:.4f} | {chunk.source}")
-            print(f"      \"{snippet}...\"")
-        print("=" * 60 + "\n")
-
-        return {
-            "reranked_chunks": reranked,
-        }
+    return {
+        "reranked_chunks": reranked,
+    }
 

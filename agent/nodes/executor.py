@@ -14,7 +14,6 @@ Responsibilities:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from typing import Any, Dict, List
-import logfire
 
 from agent.state import AgentState
 from app.models import RetrievedChunk
@@ -68,7 +67,7 @@ def _execute_single_subquery(sub_q: Dict[str, Any], retriever: HybridRetriever) 
         )
         return chunks
     except Exception as e:
-        logfire.warn(f"Failed sub-query retrieval for '{query_text}': {e}", exc_info=True)
+        print(f"Failed sub-query retrieval for '{query_text}': {e}")
         return []
 
 
@@ -127,65 +126,62 @@ def executor_node(state: AgentState) -> AgentState:
     # Cap to max 4 sub-queries for latency control
     queries_to_run = queries_to_run[:4]
 
-    with logfire.span("Parallel Executor Node", sub_queries_count=len(queries_to_run)) as span:
-        t0 = time.time()
-        print("=" * 60)
-        print(f"  PARALLEL EXECUTOR: Running {len(queries_to_run)} sub-queries")
-        print("=" * 60)
-        for i, q in enumerate(queries_to_run, 1):
-            print(f"  • Sub-query [{i}]: \"{q.get('query')}\"")
-        print("=" * 60 + "\n")
+    t0 = time.time()
+    print("=" * 60)
+    print(f"  PARALLEL EXECUTOR: Running {len(queries_to_run)} sub-queries")
+    print("=" * 60)
+    for i, q in enumerate(queries_to_run, 1):
+        print(f"  • Sub-query [{i}]: \"{q.get('query')}\"")
+    print("=" * 60 + "\n")
 
-        # ── 2. Concurrent Retrieval via ThreadPoolExecutor ───────────────────
-        subquery_results: List[List[RetrievedChunk]] = []
+    # ── 2. Concurrent Retrieval via ThreadPoolExecutor ───────────────────
+    subquery_results: List[List[RetrievedChunk]] = []
 
-        if len(queries_to_run) == 1:
-            # Single query — run in current thread
-            res = _execute_single_subquery(queries_to_run[0], retriever)
-            if res:
-                subquery_results.append(res)
-        else:
-            # Multiple queries — run in parallel
-            max_workers = min(4, len(queries_to_run))
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                futures = {
-                    pool.submit(_execute_single_subquery, sq, retriever): sq.get("query")
-                    for sq in queries_to_run
-                }
-                for fut in as_completed(futures):
-                    q_text = futures[fut]
-                    try:
-                        res = fut.result()
-                        if res:
-                            subquery_results.append(res)
-                    except Exception as e:
-                        logfire.warn(f"Thread retrieval error for '{q_text}': {e}")
+    if len(queries_to_run) == 1:
+        # Single query — run in current thread
+        res = _execute_single_subquery(queries_to_run[0], retriever)
+        if res:
+            subquery_results.append(res)
+    else:
+        # Multiple queries — run in parallel
+        max_workers = min(4, len(queries_to_run))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_execute_single_subquery, sq, retriever): sq.get("query")
+                for sq in queries_to_run
+            }
+            for fut in as_completed(futures):
+                q_text = futures[fut]
+                try:
+                    res = fut.result()
+                    if res:
+                        subquery_results.append(res)
+                except Exception as e:
+                    print(f"Thread retrieval error for '{q_text}': {e}")
 
-        # ── 3. Cross-Query RRF Fusion ────────────────────────────────────────
-        if not subquery_results:
-            current_pass_chunks: List[RetrievedChunk] = []
-        elif len(subquery_results) == 1:
-            current_pass_chunks = subquery_results[0]
-        else:
-            # Fuse multiple sub-query result lists using RRF
-            current_pass_chunks = rrf_fuse(subquery_results, k=60)
+    # ── 3. Cross-Query RRF Fusion ────────────────────────────────────────
+    if not subquery_results:
+        current_pass_chunks: List[RetrievedChunk] = []
+    elif len(subquery_results) == 1:
+        current_pass_chunks = subquery_results[0]
+    else:
+        # Fuse multiple sub-query result lists using RRF
+        current_pass_chunks = rrf_fuse(subquery_results, k=60)
 
-        # ── 4. Cumulative Union with Previous Passes ─────────────────────────
-        prev_accumulated = state.get("accumulated_chunks", [])
-        final_candidates = _merge_cumulative_chunks(
-            new_chunks=current_pass_chunks,
-            accumulated_chunks=prev_accumulated,
-            max_keep=25,
-        )
+    # ── 4. Cumulative Union with Previous Passes ─────────────────────────
+    prev_accumulated = state.get("accumulated_chunks", [])
+    final_candidates = _merge_cumulative_chunks(
+        new_chunks=current_pass_chunks,
+        accumulated_chunks=prev_accumulated,
+        max_keep=25,
+    )
 
-        elapsed = time.time() - t0
-        span.set_attribute("candidates_count", len(final_candidates))
-        span.set_attribute("latency_seconds", round(elapsed, 3))
+    elapsed = time.time() - t0
 
-        print(f"  ✓ Parallel Executor complete in {elapsed:.2f}s.")
-        print(f"  • Total unique candidates: {len(final_candidates)} (fused & deduplicated)\n")
+    print(f"  ✓ Parallel Executor complete in {elapsed:.2f}s.")
+    print(f"  • Total unique candidates: {len(final_candidates)} (fused & deduplicated)\n")
 
-        return {
-            "candidate_chunks":   final_candidates,
-            "accumulated_chunks": final_candidates,
-        }
+    return {
+        "candidate_chunks":   final_candidates,
+        "accumulated_chunks": final_candidates,
+    }

@@ -5,13 +5,7 @@ from app.services.retrieval.retriever import HybridRetriever
 from app.services.retrieval.reranker import JinaReranker
 from app.services.generation.generator import LLMGenerator
 from app.models import RetrievedChunk
-import logfire
 
-
-logfire.configure(
-    service_name="rag_pipeline",
-    send_to_logfire=True,
-)
 
 class RAGPipeline:
     """
@@ -38,7 +32,6 @@ class RAGPipeline:
         self.reranker  = JinaReranker()
         self.generator = LLMGenerator()
 
-    @logfire.instrument("RAG Pipeline Execution", extract_args=False)
     def run(
         self,
         query:        str,

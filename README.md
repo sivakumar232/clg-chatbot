@@ -243,5 +243,5 @@ uv run Ingestion/pipeline.py
 
 - [ ] **Hybrid Search**: Integrate BM25 sparse keyword search alongside dense Qdrant vector retrieval.
 - [ ] **Re-ranking**: Implement Jina Reranker v2 to re-rank top-K retrieved candidates before LLM context construction.
-- [ ] **Observability**: Add **Logfire** / LangSmith tracing for logging query latencies, token usage, and retrieval recall.
+- [ ] **Observability**: Add OpenTelemetry / LangSmith tracing for logging query latencies, token usage, and retrieval recall.
 - [ ] **Interactive UI**: Build a lightweight Next.js / Streamlit web interface for student queries.

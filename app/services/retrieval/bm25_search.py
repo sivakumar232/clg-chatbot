@@ -17,7 +17,6 @@ Why apply BM25 over the dense candidate pool instead of all chunks?
 import re
 from typing import List
 
-import logfire
 from rank_bm25 import BM25Okapi
 
 from app.models import RetrievedChunk
@@ -44,7 +43,6 @@ def tokenize(text: str) -> List[str]:
 
 # ── BM25 Ranking ───────────────────────────────────────────────────────────
 
-@logfire.instrument("BM25 Keyword Ranking", extract_args=False)
 def bm25_rank(query: str, chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
     """
     Builds a BM25Okapi index in-memory from the given chunks and scores

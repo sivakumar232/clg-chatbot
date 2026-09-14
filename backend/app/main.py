@@ -5,11 +5,13 @@ Main FastAPI application entrypoint.
 """
 
 import sys
+import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logfire
+
+logger = logging.getLogger("uvicorn.info")
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,16 +25,10 @@ from backend.app.api.router import api_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    try:
-        logfire.info("SRKR Agentic RAG API starting up...")
-    except Exception:
-        pass
+    logger.info("SRKR Agentic RAG API starting up...")
     yield
     # Shutdown
-    try:
-        logfire.info("SRKR Agentic RAG API shutting down...")
-    except Exception:
-        pass
+    logger.info("SRKR Agentic RAG API shutting down...")
 
 
 def create_application() -> FastAPI:
@@ -44,12 +40,6 @@ def create_application() -> FastAPI:
         redoc_url=f"{api_settings.API_V1_STR}/redoc",
         lifespan=lifespan,
     )
-
-    # Instrument FastAPI with Logfire
-    try:
-        logfire.instrument_fastapi(app)
-    except Exception:
-        pass
 
     # CORS configuration
     app.add_middleware(
