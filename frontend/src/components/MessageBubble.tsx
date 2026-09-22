@@ -3,9 +3,8 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatMessage } from "@/types/chat";
-import { ReasoningSteps } from "./ReasoningSteps";
 import { SourceBadge } from "./SourceBadge";
-import { AlertCircle, Copy, Check, Sparkles, User } from "lucide-react";
+import { AlertCircle, Copy, Check, Sparkles, User, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 interface MessageBubbleProps {
@@ -88,12 +87,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Reasoning Steps Accordion */}
-          {!isUser && message.steps && message.steps.length > 0 && (
-            <ReasoningSteps
-              steps={message.steps}
-              isStreaming={message.isStreaming}
-            />
+          {/* Loader only when generating response */}
+          {!isUser && message.isStreaming && (
+            <div className="flex items-center gap-2 py-1 text-slate-500 select-none">
+              <Loader2 className="w-4 h-4 text-[#800020] animate-spin shrink-0" />
+              <span className="text-xs font-medium text-slate-500">Thinking...</span>
+            </div>
           )}
 
           {/* Markdown Content */}

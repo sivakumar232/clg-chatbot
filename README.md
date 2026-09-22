@@ -33,41 +33,37 @@ The project is actively built as an end-to-end RAG system powered by Python 3.12
 The query answering system operates as a self-reflective, adaptive decision graph built with **LangGraph**:
 
 ```mermaid
-graph TD
-    start_([start]) --> cache
+flowchart TD
+    START([START]) --> Cache[1. cache]
+    
+    %% Cache conditional routing
+    Cache -- Cache Hit (<1ms) --> Responder[9. responder]
+    Cache -- Cache Miss --> Planner[2. planner]
+    
+    %% Planner conditional routing
+    Planner -- Direct / Chit-Chat / Privacy --> Responder
+    Planner -- Needs Retrieval --> Executor[3. executor]
+    
+    %% Retrieval & Verification Loop
+    subgraph Retrieval_Reflection_Loop [Retrieval & Reflection Loop]
+        Executor --> Reranker[4. reranker]
+        Reranker --> Validator[5. validator]
+        Validator -- Insufficient & Retries Left --> Reformulator[6. reformulator]
+        Reformulator --> Executor
+    end
+    
+    %% Generation & Hallucination Guard Loop
+    subgraph Generation_Guard_Loop [Generation & Faithfulness Loop]
+        Validator -- Sufficient or Exhausted --> Generator[7. generator]
+        Generator --> Guard[8. guard]
+        Guard -- Ungrounded & Retries Left --> Generator
+    end
+    
+    %% Finalization
+    Guard -- Grounded or Exhausted --> Responder
+    Responder --> CacheWrite[10. cachewrite]
+    CacheWrite --> END([END])
 
-    cache{cache check}
-    cache -->|hit| responder
-    cache -->|miss| planner
-
-    planner["planner: rewrite, classify, decompose"]
-    planner -->|direct| responder
-    planner -->|needs retrieval| executor
-
-    executor["parallel executor: hybrid search + fusion"]
-    executor --> reranker[reranker]
-    reranker --> validator{evidence validator}
-
-    validator -->|sufficient| generator
-    validator -->|insufficient, retries left| reformulator
-    validator -->|insufficient, retries exhausted| generator
-
-    reformulator[query reformulator] --> executor
-
-    generator[answer generator] --> guard{answer guard}
-
-    guard -->|grounded| responder
-    guard -->|ungrounded, retry left| generator
-    guard -->|ungrounded, exhausted| responder
-
-    responder[responder] --> cachewrite[cache write] --> end_([end])
-
-    classDef default fill:#1f2937,stroke:#60a5fa,color:#fff
-    classDef decision fill:#1f2937,stroke:#f59e0b,color:#fff
-    classDef terminal fill:#111827,stroke:#10b981,color:#fff
-
-    class cache,validator,guard decision
-    class start_,end_ terminal
 ```
 
 ---
