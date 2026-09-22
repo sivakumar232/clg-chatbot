@@ -1,7 +1,6 @@
 """
 agent/nodes/planner.py
 ──────────────────────
-Unified Query Planner node for Agentic RAG.
 
 Performs 4 tasks in a single fast LLM call:
 1. Coreference resolution (pronouns rewritten with chat history)
