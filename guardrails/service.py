@@ -181,7 +181,10 @@ class NeMoGuardrailsService:
         # 4. If NeMo Guardrails LLM engine is active, verify via Colang rules
         if self._rails:
             try:
-                # Synchronous check using generate
+                # Apply nest_asyncio to allow sync NeMo generate() to run safely
+                # inside asyncio.to_thread() which creates an implicit event loop context.
+                import nest_asyncio
+                nest_asyncio.apply()
                 response = self._rails.generate(messages=[{"role": "user", "content": user_query}])
                 bot_text = response.get("content", "") if isinstance(response, dict) else getattr(response, "content", str(response))
 

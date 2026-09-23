@@ -11,6 +11,7 @@ Responsibilities:
 """
 
 import time
+import threading
 from typing import List
 from langsmith import traceable
 
@@ -20,12 +21,16 @@ from app.services.retrieval.reranker import JinaReranker
 
 # Cached reranker instance to reuse HTTP sessions & key rotation state
 _RERANKER_INSTANCE: JinaReranker | None = None
+_RERANKER_LOCK = threading.Lock()
 
 
 def _get_reranker() -> JinaReranker:
+    """Thread-safe singleton getter with double-checked locking."""
     global _RERANKER_INSTANCE
     if _RERANKER_INSTANCE is None:
-        _RERANKER_INSTANCE = JinaReranker()
+        with _RERANKER_LOCK:
+            if _RERANKER_INSTANCE is None:   # second check inside lock
+                _RERANKER_INSTANCE = JinaReranker()
     return _RERANKER_INSTANCE
 
 

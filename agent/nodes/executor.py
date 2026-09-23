@@ -11,7 +11,8 @@ Responsibilities:
 5. Emits top candidate chunks for downstream Cross-Encoder reranking.
 """
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+import threading
 import time
 from typing import Any, Dict, List
 from langsmith import traceable
@@ -23,12 +24,16 @@ from app.services.retrieval.rrf import rrf_fuse
 
 # Cached retriever instance to reuse JinaEmbedder and Qdrant connections
 _RETRIEVER_INSTANCE: HybridRetriever | None = None
+_RETRIEVER_LOCK = threading.Lock()
 
 
 def _get_retriever() -> HybridRetriever:
+    """Thread-safe singleton getter with double-checked locking."""
     global _RETRIEVER_INSTANCE
     if _RETRIEVER_INSTANCE is None:
-        _RETRIEVER_INSTANCE = HybridRetriever()
+        with _RETRIEVER_LOCK:
+            if _RETRIEVER_INSTANCE is None:   # second check inside lock
+                _RETRIEVER_INSTANCE = HybridRetriever()
     return _RETRIEVER_INSTANCE
 
 
@@ -168,14 +173,17 @@ def executor_node(state: AgentState) -> AgentState:
                 pool.submit(_execute_single_subquery, sq, retriever): sq.get("query")
                 for sq in queries_to_run
             }
-            for fut in as_completed(futures):
-                q_text = futures[fut]
-                try:
-                    res = fut.result()
-                    if res:
-                        subquery_results.append(res)
-                except Exception as e:
-                    print(f"Thread retrieval error for '{q_text}': {e}")
+            try:
+                for fut in as_completed(futures, timeout=15):  # hard cap: 15s per sub-query batch
+                    q_text = futures[fut]
+                    try:
+                        res = fut.result()
+                        if res:
+                            subquery_results.append(res)
+                    except Exception as e:
+                        print(f"Thread retrieval error for '{q_text}': {e}")
+            except FuturesTimeoutError:
+                print("  ⚠️  ThreadPoolExecutor sub-query batch timed out after 15s. Continuing with partial results.")
 
     # ── 3. Cross-Query RRF Fusion ────────────────────────────────────────
     if not subquery_results:

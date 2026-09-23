@@ -15,6 +15,7 @@ Responsibilities:
 """
 
 from typing import Any, Dict, List
+from langsmith import traceable
 
 from agent.state import AgentState, RouteType
 
@@ -53,6 +54,7 @@ def _build_direct_response(query: str, intent: Dict[str, Any]) -> str:
     )
 
 
+@traceable(name="Responder Node", run_type="chain")
 def responder_node(state: AgentState) -> AgentState:
     """
     LangGraph Responder node:

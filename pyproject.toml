@@ -30,6 +30,7 @@ dependencies = [
     "langsmith>=0.12.1",
     "nemoguardrails>=0.24.1",
     "openai>=3.17.0",
+    "nest-asyncio>=1.6.0",
 ]
 
 [project.scripts]
