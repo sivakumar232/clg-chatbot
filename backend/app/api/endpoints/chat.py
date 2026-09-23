@@ -143,6 +143,16 @@ async def _stream_agent_execution(
                             "status": "hit" if hit else "miss",
                         })
 
+                    elif node_name == "input_rail":
+                        status = node_output.get("input_rail_status", "allowed")
+                        is_blocked = (status == "blocked")
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "input_rail",
+                            "label": "NeMo Guardrails: Input Blocked" if is_blocked else "NeMo Guardrails: Input Safety Passed",
+                            "status": status,
+                        })
+
                     elif node_name == "planner":
                         route = str(node_output.get("route", "needs_retrieval"))
                         sub_queries = [sq.get("query", "") for sq in node_output.get("sub_queries", [])]

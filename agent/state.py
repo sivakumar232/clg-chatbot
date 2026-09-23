@@ -55,11 +55,12 @@ class AgentState(TypedDict, total=False):
     Mutable state object passed between all LangGraph nodes.
     """
 
-    # ── INPUT & CACHE ────────────────────────────────────────────────────────
+    # ── INPUT, CACHE & INPUT RAILS ───────────────────────────────────────────
     query: str
     chat_history: List[Dict[str, str]]
     cache_hit: bool
     cached_response: Optional[Dict[str, Any]]
+    input_rail_status: Optional[str]  # "allowed" | "blocked"
 
     # ── PLANNER ──────────────────────────────────────────────────────────────
     rewritten_query: str

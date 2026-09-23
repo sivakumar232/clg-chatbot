@@ -91,7 +91,7 @@ def _call_gemini_clarifier(prompt_text: str) -> Optional[Dict[str, Any]]:
 def clarifier_node(state: AgentState) -> AgentState:
     """
     LangGraph Clarifier node:
-    Reads:  query, rewritten_query, intent, chat_history
+    Reads:  query, rewritten_query, intent
     Writes: answer, clarification
     """
     raw_query = state.get("query", "").strip()
@@ -100,18 +100,8 @@ def clarifier_node(state: AgentState) -> AgentState:
     slot_needed = intent.get("slot_needed") or "missing_detail"
     category = intent.get("category") or "general"
 
-    # Format recent chat history for context-aware disambiguation
-    chat_history = state.get("chat_history", [])
-    history_lines = []
-    for msg in chat_history[-3:]:
-        role = msg.get("role", "user").capitalize()
-        content = msg.get("content", "").strip()
-        history_lines.append(f"{role}: {content}")
-    history_str = "\n".join(history_lines) if history_lines else "None"
-
-    # Build prompt for Clarifier LLM
+    # Build prompt for Clarifier LLM without context/history
     prompt_payload = (
-        f"Conversation History:\n{history_str}\n\n"
         f"User Query: \"{raw_query}\"\n"
         f"Resolved Query: \"{rewritten_query}\"\n"
         f"Intent Category: {category}\n"
@@ -131,15 +121,34 @@ def clarifier_node(state: AgentState) -> AgentState:
 
     # Resiliency fallback if LLM call fails
     if not result_dict or not isinstance(result_dict, dict):
-        if "person" in slot_needed.lower():
-            question = "Could you please specify which person or faculty member you are referring to?"
-        else:
-            question = f"Could you please specify which {slot_needed.replace('_', ' ')} you are inquiring about?"
+        makes_sense = False
+        question = (
+            "Your query seems unclear or does not appear to be a valid college academic or campus question. "
+            "Please ask a specific question related to college academics, departments, regulations, or campus facilities."
+        )
         options = []
     else:
-        question = result_dict.get("question") or f"Could you please clarify your question regarding '{raw_query}'?"
+        makes_sense = bool(result_dict.get("makes_sense", True))
         raw_options = result_dict.get("options") or []
         options = [str(opt).strip() for opt in raw_options if str(opt).strip()]
+        question = result_dict.get("question") or f"Could you please clarify your question regarding '{raw_query}'?"
+
+
+    # STRICT SENSIBILITY ENFORCEMENT:
+    # Only produce clarification options if the question actually makes sense.
+    # If the question is nonsensical, illogical, absurd, or lacks options, do not clarify.
+    if not makes_sense or not options:
+        print("=" * 60)
+        print(f"  CLARIFIER NODE: Sensibility Check REJECTED ({provider_used} in {elapsed:.2f}s)")
+        print("=" * 60)
+        print(f"  • Raw Query   : \"{raw_query}\"")
+        print(f"  • Sensible    : False")
+        print(f"  • Message     : {question}\n")
+        print("=" * 60 + "\n")
+        return {
+            "answer": question,
+            "clarification": None,
+        }
 
     payload: ClarificationPayload = {
         "question": question,
@@ -150,6 +159,7 @@ def clarifier_node(state: AgentState) -> AgentState:
     print("=" * 60)
     print(f"  CLARIFIER NODE ({provider_used} in {elapsed:.2f}s)")
     print("=" * 60)
+    print(f"  • Sensible    : True")
     print(f"  • Slot Needed : {slot_needed}")
     print(f"  • Question    : {question}")
     print(f"  • Dynamic Options ({len(options)}): {options}\n")

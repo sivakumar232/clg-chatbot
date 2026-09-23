@@ -10,6 +10,10 @@ Compiles the LangGraph StateGraph matching the updated Agentic RAG architecture:
       │                                                     ▲
     [miss]                                                  │
       ▼                                                     │
+    input_rail ────── [blocked] ────────────────────────────┤
+      │                                                     │
+    [allowed]                                               │
+      ▼                                                     │
     planner ───────── [direct] ─────────────────────────────┤
       │                                                     │
       ├────────────── [clarify] ─────► clarifier ───────────┤
@@ -49,6 +53,7 @@ from agent.state import AgentState, RouteType, EvidenceStatus, GuardStatus
 from agent.nodes import (
     cache_node,
     cache_write_node,
+    input_rail_node,
     planner_node,
     clarifier_node,
     executor_node,
@@ -68,6 +73,13 @@ from agent.nodes import (
 def route_after_cache(state: AgentState) -> str:
     """Routes based on cache lookup result."""
     if state.get("cache_hit", False):
+        return "responder"
+    return "input_rail"
+
+
+def route_after_input_rail(state: AgentState) -> str:
+    """Routes based on NeMo Guardrails input safety check."""
+    if state.get("input_rail_status") == "blocked":
         return "responder"
     return "planner"
 
@@ -112,6 +124,7 @@ def build_graph() -> StateGraph:
 
     # ── Register all nodes ────────────────────────────────────────────────────
     graph.add_node("cache",        cache_node)
+    graph.add_node("input_rail",   input_rail_node)
     graph.add_node("planner",      planner_node)
     graph.add_node("clarifier",    clarifier_node)
     graph.add_node("executor",     executor_node)
@@ -130,6 +143,16 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges(
         "cache",
         route_after_cache,
+        {
+            "responder":  "responder",
+            "input_rail": "input_rail",
+        },
+    )
+
+    # ── Conditional edges from input_rail ─────────────────────────────────────
+    graph.add_conditional_edges(
+        "input_rail",
+        route_after_input_rail,
         {
             "responder": "responder",
             "planner":   "planner",
