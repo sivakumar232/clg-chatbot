@@ -16,6 +16,7 @@ export function useAgentChat() {
   ]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const currentRequestIdRef = useRef<string | null>(null);
 
   const sendMessage = useCallback(
     async (queryText: string) => {
@@ -24,6 +25,8 @@ export function useAgentChat() {
 
       const userMessageId = `user-${Date.now()}`;
       const assistantMessageId = `asst-${Date.now()}`;
+      const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      currentRequestIdRef.current = requestId;
 
       const userMessage: ChatMessage = {
         id: userMessageId,
@@ -73,6 +76,7 @@ export function useAgentChat() {
           body: JSON.stringify({
             query: trimmedQuery,
             chat_history: chatHistory,
+            request_id: requestId,
           }),
           signal: abortControllerRef.current.signal,
         });
@@ -170,7 +174,24 @@ export function useAgentChat() {
           }
         }
       } catch (err: any) {
-        if (err.name === "AbortError") return;
+        if (err.name === "AbortError") {
+          // Immediately update message state in UI so thinking spinner stops
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== assistantMessageId) return msg;
+              const stoppedSteps = (msg.steps || []).map((s) =>
+                s.status === "active" ? { ...s, status: "completed" as const, label: `${s.label} (Stopped)` } : s
+              );
+              return {
+                ...msg,
+                isStreaming: false,
+                content: msg.content ? `${msg.content}\n\n*(Stopped by user)*` : "*(Generation stopped by user)*",
+                steps: stoppedSteps,
+              };
+            })
+          );
+          return;
+        }
 
         setMessages((prev) =>
           prev.map((msg) => {
@@ -185,16 +206,28 @@ export function useAgentChat() {
       } finally {
         setIsLoading(false);
         abortControllerRef.current = null;
+        currentRequestIdRef.current = null;
       }
     },
     [isLoading, messages]
   );
 
   const stopGeneration = useCallback(() => {
+    const activeReqId = currentRequestIdRef.current;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsLoading(false);
+      abortControllerRef.current = null;
     }
+    if (activeReqId) {
+      // Send immediate backend stop signal to cancel running threads/LLM calls
+      fetch(`${API_BASE_URL}/api/chat/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: activeReqId }),
+      }).catch(() => {});
+      currentRequestIdRef.current = null;
+    }
+    setIsLoading(false);
   }, []);
 
   const clearChat = useCallback(() => {

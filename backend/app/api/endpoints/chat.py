@@ -8,11 +8,10 @@ Server-Sent Events (SSE) as each node in the graph executes.
 
 import asyncio
 import json
-import logging
-import sys
-from pathlib import Path
-from typing import AsyncGenerator
-from fastapi import APIRouter, HTTPException
+import threading
+import uuid
+from typing import AsyncGenerator, Dict
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -24,9 +23,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agent.graph import app
 from agent.state import AgentState
-from backend.app.schemas.chat import ChatRequest, ChatResponse
+from backend.app.schemas.chat import ChatRequest, ChatResponse, StopRequest
 
 router = APIRouter()
+
+# Registry of active streaming cancellations: {request_id: threading.Event}
+_ACTIVE_STREAMS: Dict[str, threading.Event] = {}
+_STREAMS_LOCK = threading.Lock()
 
 
 def _format_sse(event_data: dict) -> str:
@@ -34,10 +37,17 @@ def _format_sse(event_data: dict) -> str:
     return f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
 
-async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenerator[str, None]:
+async def _stream_agent_execution(
+    query: str,
+    chat_history: list,
+    request_id: str,
+    raw_request: Request | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Async generator that executes the LangGraph state machine and yields
     granular progress updates for the frontend UI.
+    Streams node events in real-time as they finish and immediately halts
+    execution if client disconnects or hits Stop.
     """
     initial_state: AgentState = {
         "query":                 query,
@@ -60,136 +70,225 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
     final_sources = []
     final_provider = "Campus Advisor"
     final_degraded = False
+    final_clarification = None
+
+    stop_event = threading.Event()
+    with _STREAMS_LOCK:
+        _ACTIVE_STREAMS[request_id] = stop_event
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _worker():
+        try:
+            for step in app.stream(initial_state, stream_mode="updates"):
+                if stop_event.is_set():
+                    logger.info("LangGraph stream iteration stopped via cancellation token.")
+                    break
+                loop.call_soon_threadsafe(queue.put_nowait, ("step", step))
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+        except Exception as exc:
+            logger.exception("Error in LangGraph worker thread: %s", exc)
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+
+    worker_thread = threading.Thread(target=_worker, daemon=True)
+    worker_thread.start()
+
+    async def _disconnect_watcher():
+        if raw_request is None:
+            return
+        while not stop_event.is_set():
+            try:
+                if await raw_request.is_disconnected():
+                    logger.info("Client disconnect detected by watcher. Halting agent thread.")
+                    stop_event.set()
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+
+    watcher_task = asyncio.create_task(_disconnect_watcher())
 
     try:
-        # Run the synchronous LangGraph stream in a thread pool to avoid
-        # blocking the FastAPI async event loop (critical for multi-user serving).
-        def _run_graph_stream():
-            return list(app.stream(initial_state, stream_mode="updates"))
+        while True:
+            if stop_event.is_set():
+                break
 
-        steps = await asyncio.to_thread(_run_graph_stream)
+            if raw_request is not None and await raw_request.is_disconnected():
+                logger.info("Client disconnected. Halting agent execution.")
+                stop_event.set()
+                break
 
-        # Process and emit SSE events for each completed node
-        for step in steps:
-            for node_name, node_output in step.items():
+            try:
+                item_type, data = await asyncio.wait_for(queue.get(), timeout=0.25)
+            except asyncio.TimeoutError:
+                continue
 
-                if node_name == "cache":
-                    hit = bool(node_output.get("cache_hit", False))
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "cache",
-                        "label": "Cache Hit (< 1ms)" if hit else "Checking in-memory cache",
-                        "status": "hit" if hit else "miss",
-                    })
+            if item_type == "done":
+                break
+            elif item_type == "error":
+                raise data
+            elif item_type == "step":
+                step = data
+                for node_name, node_output in step.items():
+                    if node_name == "cache":
+                        hit = bool(node_output.get("cache_hit", False))
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "cache",
+                            "label": "Cache Hit (< 1ms)" if hit else "Checking in-memory cache",
+                            "status": "hit" if hit else "miss",
+                        })
 
-                elif node_name == "planner":
-                    route = str(node_output.get("route", "needs_retrieval"))
-                    sub_queries = [sq.get("query", "") for sq in node_output.get("sub_queries", [])]
-                    rewritten = node_output.get("rewritten_query")
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "planner",
-                        "label": "Query Analyzed & Decomposed",
-                        "route": route,
-                        "rewritten_query": rewritten,
-                        "sub_queries": sub_queries,
-                    })
+                    elif node_name == "planner":
+                        route = str(node_output.get("route", "needs_retrieval"))
+                        sub_queries = [sq.get("query", "") for sq in node_output.get("sub_queries", [])]
+                        rewritten = node_output.get("rewritten_query")
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "planner",
+                            "label": "Query Analyzed & Decomposed",
+                            "route": route,
+                            "rewritten_query": rewritten,
+                            "sub_queries": sub_queries,
+                        })
 
-                elif node_name == "executor":
-                    count = len(node_output.get("candidate_chunks", []))
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "executor",
-                        "label": f"Retrieved {count} candidates via Qdrant & BM25",
-                        "candidate_count": count,
-                    })
+                    elif node_name == "clarifier":
+                        clar_payload = node_output.get("clarification")
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "clarifier",
+                            "label": "Disambiguating query with quick-reply options",
+                            "clarification": clar_payload,
+                        })
 
-                elif node_name == "reranker":
-                    reranked = node_output.get("reranked_chunks", [])
-                    top_score = round(reranked[0].score, 4) if reranked else 0.0
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "reranker",
-                        "label": f"Cross-Encoder reranked top {len(reranked)} chunks (Top Score: {top_score})",
-                        "top_score": top_score,
-                    })
+                    elif node_name == "executor":
+                        count = len(node_output.get("candidate_chunks", []))
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "executor",
+                            "label": f"Retrieved {count} candidates via Qdrant & BM25",
+                            "candidate_count": count,
+                        })
 
-                elif node_name == "validator":
-                    status = str(node_output.get("evidence_status", "sufficient"))
-                    pruned_count = len(node_output.get("pruned_chunks", []))
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "validator",
-                        "label": f"7-Point Evidence Check: {status.upper()}",
-                        "evidence_status": status,
-                        "pruned_count": pruned_count,
-                    })
+                    elif node_name == "reranker":
+                        reranked = node_output.get("reranked_chunks", [])
+                        top_score = round(reranked[0].score, 4) if reranked else 0.0
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "reranker",
+                            "label": f"Cross-Encoder reranked top {len(reranked)} chunks (Top Score: {top_score})",
+                            "top_score": top_score,
+                        })
 
-                elif node_name == "reformulator":
-                    reformed = node_output.get("reformulated_query", "")
-                    retry = node_output.get("retrieval_retry_count", 1)
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "reformulator",
-                        "label": f"Diagnostic expansion for missing facts (Attempt {retry})",
-                        "reformulated_query": reformed,
-                    })
+                    elif node_name == "validator":
+                        status = str(node_output.get("evidence_status", "sufficient"))
+                        pruned_count = len(node_output.get("pruned_chunks", []))
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "validator",
+                            "label": f"7-Point Evidence Check: {status.upper()}",
+                            "evidence_status": status,
+                            "pruned_count": pruned_count,
+                        })
 
-                elif node_name == "generator":
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "generator",
-                        "label": "Synthesizing grounded answer with citations",
-                    })
+                    elif node_name == "reformulator":
+                        reformed = node_output.get("reformulated_query", "")
+                        retry = node_output.get("retrieval_retry_count", 1)
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "reformulator",
+                            "label": f"Diagnostic expansion for missing facts (Attempt {retry})",
+                            "reformulated_query": reformed,
+                        })
 
-                elif node_name == "guard":
-                    g_status = str(node_output.get("guard_status", "grounded"))
-                    yield _format_sse({
-                        "type": "step",
-                        "node": "guard",
-                        "label": "NeMo Guardrails: Output verified & PII sanitized" if g_status == "grounded" else "NeMo Guardrails: Ungrounded claim flagged",
-                        "guard_status": g_status,
-                    })
+                    elif node_name == "generator":
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "generator",
+                            "label": "Synthesizing grounded answer with citations",
+                        })
 
-                elif node_name == "responder":
-                    final_answer = node_output.get("answer", "")
-                    final_sources = node_output.get("sources", [])
-                    final_provider = node_output.get("provider", "Groq")
+                    elif node_name == "guard":
+                        g_status = str(node_output.get("guard_status", "grounded"))
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "guard",
+                            "label": "NeMo Guardrails: Output verified & PII sanitized" if g_status == "grounded" else "NeMo Guardrails: Ungrounded claim flagged",
+                            "guard_status": g_status,
+                        })
 
-        # Emit completion payload with verified answer and sources
-        yield _format_sse({
-            "type": "done",
-            "answer": final_answer,
-            "sources": final_sources,
-            "provider": final_provider,
-            "degraded": final_degraded,
-        })
+                    elif node_name == "responder":
+                        final_answer = node_output.get("answer", "")
+                        final_sources = node_output.get("sources", [])
+                        final_provider = node_output.get("provider", "Campus Advisor")
+                        final_clarification = node_output.get("clarification")
+                        final_degraded = node_output.get("degraded", False)
+
+        # Emit completion payload with verified answer, sources, and clarification
+        if not stop_event.is_set():
+            yield _format_sse({
+                "type": "done",
+                "answer": final_answer,
+                "sources": final_sources,
+                "provider": final_provider,
+                "clarification": final_clarification,
+                "degraded": final_degraded,
+            })
 
     except Exception as e:
-        logger.exception("Streaming error in LangGraph: %s", str(e))
-        yield _format_sse({
-            "type": "error",
-            "message": f"An error occurred during pipeline execution: {str(e)}",
-        })
+        if not stop_event.is_set():
+            logger.exception("Streaming error in LangGraph: %s", str(e))
+            yield _format_sse({
+                "type": "error",
+                "message": f"An error occurred during pipeline execution: {str(e)}",
+            })
+    finally:
+        stop_event.set()
+        with _STREAMS_LOCK:
+            _ACTIVE_STREAMS.pop(request_id, None)
+        watcher_task.cancel()
 
 
 @router.post("/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, raw_request: Request):
     """
     Server-Sent Events (SSE) endpoint:
     Streams step-by-step agentic transitions and the final grounded response.
+    Supports cancellation when client disconnects or calls /api/chat/stop.
     """
+    req_id = request.request_id or str(uuid.uuid4())
     history = [{"role": m.role, "content": m.content} for m in (request.chat_history or [])]
     return StreamingResponse(
-        _stream_agent_execution(query=request.query, chat_history=history),
+        _stream_agent_execution(
+            query=request.query,
+            chat_history=history,
+            request_id=req_id,
+            raw_request=raw_request,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream",
             "X-Accel-Buffering": "no",
+            "X-Request-ID": req_id,
         },
     )
+
+
+@router.post("/stop")
+async def stop_stream(payload: StopRequest):
+    """Signals an active streaming agent pipeline to halt execution immediately."""
+    with _STREAMS_LOCK:
+        event = _ACTIVE_STREAMS.get(payload.request_id)
+        if event:
+            event.set()
+            logger.info("Pipeline %s cancelled via /api/chat/stop.", payload.request_id)
+            return {"status": "stopped", "request_id": payload.request_id}
+    return {"status": "not_active_or_completed", "request_id": payload.request_id}
+
+
 
 
 @router.post("", response_model=ChatResponse)
@@ -207,6 +306,7 @@ async def chat_standard(request: ChatRequest):
             sources=result.get("sources", []),
             provider=result.get("provider", "Groq"),
             route=str(result.get("route")),
+            clarification=result.get("clarification"),
             cache_hit=result.get("cache_hit", False),
             degraded=result.get("degraded", False),
         )

@@ -15,6 +15,7 @@ Responsibilities:
 """
 
 from typing import Any, Dict, List
+from langsmith import traceable
 
 from agent.state import AgentState, RouteType
 
@@ -53,6 +54,7 @@ def _build_direct_response(query: str, intent: Dict[str, Any]) -> str:
     )
 
 
+@traceable(name="Responder Node", run_type="chain")
 def responder_node(state: AgentState) -> AgentState:
     """
     LangGraph Responder node:
@@ -79,6 +81,17 @@ def responder_node(state: AgentState) -> AgentState:
             "answer":   answer,
             "sources":  [],
             "provider": "Direct",
+        }
+
+    # ── 3. Clarification Route ───────────────────────────────────────────────
+    if route == RouteType.CLARIFY:
+        clarification = state.get("clarification")
+        answer = state.get("answer") or (clarification.get("question") if clarification else "Could you please clarify your question?")
+        return {
+            "answer":        answer,
+            "sources":       [],
+            "provider":      "Clarifier",
+            "clarification": clarification,
         }
 
     # ── 3. RAG Route (Format Final Answer with Sources) ──────────────────────

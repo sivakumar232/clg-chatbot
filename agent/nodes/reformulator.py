@@ -19,18 +19,8 @@ from langsmith import traceable
 
 from config import settings
 from agent.state import AgentState
+from agent.prompts import REFORMULATOR_SYSTEM_PROMPT
 
-
-REFORMULATOR_SYSTEM_PROMPT = """You are a search query reformulation expert for a college knowledge base.
-A previous search failed to retrieve sufficient or relevant evidence.
-Your task is to rewrite the search query into a single, highly-focused, keyword-rich search string.
-
-RULES:
-1. Focus specifically on the diagnosed failure reason and missing information.
-2. Remove all conversational fluff, polite phrases, and filler words.
-3. Include exact academic keywords (e.g. course codes, regulation numbers like R20/R23, department names, syllabus, faculty).
-4. Output ONLY the plain search string (max 10-12 words). No explanations, no quotes, no formatting.
-"""
 
 
 @traceable(name="Groq Reformulator Inference", run_type="llm")

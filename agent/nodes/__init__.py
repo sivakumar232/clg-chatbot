@@ -2,6 +2,7 @@
 
 from agent.nodes.cache        import cache_node, cache_write_node
 from agent.nodes.planner      import planner_node
+from agent.nodes.clarifier    import clarifier_node
 from agent.nodes.executor     import executor_node
 from agent.nodes.reranker     import reranker_node
 from agent.nodes.validator    import validator_node
@@ -14,6 +15,7 @@ __all__ = [
     "cache_node",
     "cache_write_node",
     "planner_node",
+    "clarifier_node",
     "executor_node",
     "reranker_node",
     "validator_node",
