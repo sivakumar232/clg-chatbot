@@ -1,255 +1,189 @@
-# SRKR Engineering College — AI Chatbot (RAG Pipeline)
+# CLG Chatbot
 
-An intelligent Retrieval-Augmented Generation (RAG) system designed to answer queries regarding SRKR Engineering College's academic curricula, departmental information, placement statistics, campus life, and administrative compliance documents.
-
----
-
-## 📌 Project Status Overview
-
-The project is actively built as an end-to-end RAG system powered by Python 3.12, **`uv`**, **LangChain**, **Jina AI Embeddings**, and **Qdrant Vector DB**.
-
-### Current Implementation Milestones:
-1. **Web Scraper**: Custom scraper using `requests`, `BeautifulSoup4`, and `markdownify` to harvest and convert website pages into clean `.md` files (`crawler/scrape_srkrec.py`).
-2. **Raw Data Ingestion**:
-   - **189 Scraped Markdown Web Pages** (`Data/raw/website/` or `Data/raw/*.md`).
-   - **515 Academic & Administrative PDF Documents** (Syllabus R20/R23/R24, IQAC, BOS, NBA, NAAC, NIRF reports).
-3. **Data Preprocessing & Cleaning**:
-   - Custom noise reduction stripping navbars, footers, theme preseters, and empty image alt-text tags from Markdown.
-   - Filtering cover pages and Model Question Paper (MQP) noise from syllabus PDFs.
-   - Unicode sanitization for malformed PDF surrogate pairs (`safe_unicode`).
-4. **Domain-Aware Chunking**:
-   - Header-aware Markdown chunking with source URL context prepending.
-   - Section/Course-unit aware PDF chunking with overlap windowing.
-5. **Vector Embedding & Storage**:
-   - **Embeddings**: `jina-embeddings-v5-text-small` (1024 dimensions) via `JinaEmbedder`.
-   - **Vector Store**: Qdrant Cloud vector database with metadata payload indexing (`qdrant-client`).
-6. **Generation / LLM Layer**:
-   - Integrated with **Groq** (`llama-3.3-70b-versatile`) and **Google Gemini** (`gemini-embedding-001` / Gemini models) via `config.py`.
+> A production-grade, self-reflective Agentic RAG assistant for academic institutions, built with **LangGraph**, **NeMo Guardrails**, **Hybrid Retrieval (Dense + BM25 + RRF)**, and **Cross-Encoder Reranking**.
 
 ---
 
-## 🧠 Agentic RAG Architecture
+## 🚀 Key Features Implemented
 
-The query answering system operates as a self-reflective, adaptive decision graph built with **LangGraph**:
+1. **Hybrid Retrieval (Dense + BM25 + RRF)**: Combines semantic vector search (Jina Embeddings in Qdrant) with keyword search (BM25) and merges the top results using Reciprocal Rank Fusion (RRF) for high-accuracy document retrieval.
+2. **Self-Reflective Agentic Workflow (LangGraph)**: An autonomous state graph that classifies user queries, routes chit-chat directly, breaks complex questions into sub-queries, and automatically reformulates search queries if initial evidence is lacking.
+3. **NeMo Guardrails & Safety**: Enforces input rails to block prompt injections and off-topic questions, output rails to stop hallucinated course codes, and deterministic PII scrubbing to protect private contact numbers.
+4. **Cross-Encoder Precision Reranking**: Re-evaluates retrieved document chunks with Jina Reranker v2 using deep cross-attention, filtering down to the highest-quality chunks before generating answers.
+5. **7-Point Evidence Validation Gate**: Verifies retrieved context quality before answering—checking score confidence, pruning redundant text, ensuring sub-query coverage, and verifying target entities (faculty names, HODs, course codes).
+6. **Full-Stack Chat Application**: A FastAPI backend supporting Server-Sent Events (SSE) for real-time streaming, paired with a modern Next.js 16 chat interface and automated multi-key failover across Groq and Gemini models.
+
+---
+
+## 🧠 System Architecture
 
 ```mermaid
 flowchart TD
-    START([START]) --> Cache[1. cache]
+    START([● User Query]) --> Cache["1. Cache (In-Memory LRU)"]
     
-    %% Cache conditional routing
-    Cache -- Cache Hit (<1ms) --> Responder[9. responder]
-    Cache -- Cache Miss --> Planner[2. planner]
+    %% Fast-Path Routing
+    Cache -- "Cache Hit (<1ms)" --> Responder["9. Responder"]
+    Cache -- "Cache Miss" --> InputRails{"NeMo Input Rails\n(Jailbreak, PII & Topic Check)"}
+    
+    %% Input Guardrails routing
+    InputRails -- "Blocked / Policy Violation" --> DirectReject["Direct Refusal / Privacy Notice"]
+    DirectReject --> Responder
+    InputRails -- "Allowed / Safe Query" --> Planner["2. Planner (Query Rewriter & Decomposer)"]
     
     %% Planner conditional routing
-    Planner -- Direct / Chit-Chat / Privacy --> Responder
-    Planner -- Needs Retrieval --> Executor[3. executor]
+    Planner -- "Direct / Chit-Chat" --> Responder
+    Planner -- "Needs Retrieval" --> Executor["3. Parallel Executor\n(Dense + BM25 + Cross-Query RRF)"]
     
     %% Retrieval & Verification Loop
-    subgraph Retrieval_Reflection_Loop [Retrieval & Reflection Loop]
-        Executor --> Reranker[4. reranker]
-        Reranker --> Validator[5. validator]
-        Validator -- Insufficient & Retries Left --> Reformulator[6. reformulator]
+    subgraph Retrieval_Reflection_Loop [Retrieval & Self-Reflection Loop]
+        direction TB
+        Executor --> Reranker["4. Reranker (Jina Cross-Encoder v2)"]
+        Reranker --> Validator{"5. Evidence Validator\n(7-Point Quality & Entity Gate)"}
+        Validator -- "Insufficient Evidence & Retries Left" --> Reformulator["6. Query Reformulator\n(Groq Diagnostic Expansion)"]
         Reformulator --> Executor
     end
     
     %% Generation & Hallucination Guard Loop
     subgraph Generation_Guard_Loop [Generation & Faithfulness Loop]
-        Validator -- Sufficient or Exhausted --> Generator[7. generator]
-        Generator --> Guard[8. guard]
-        Guard -- Ungrounded & Retries Left --> Generator
+        direction TB
+        Validator -- "Sufficient or Retries Exhausted" --> Generator["7. Generator (Groq LLM)"]
+        Generator --> Guard["8. Guard & NeMo Output Rails"]
+        
+        subgraph NeMo_Output_Rails [NeMo Output Rails]
+            direction TB
+            GroundingCheck["• Course Code & Factual Grounding"]
+            PIIScrub["• Deterministic PII & Phone Scrubbing"]
+        end
+        Guard --- NeMo_Output_Rails
+        
+        Guard -- "Ungrounded & Retries Left" --> Generator
     end
     
     %% Finalization
-    Guard -- Grounded or Exhausted --> Responder
-    Responder --> CacheWrite[10. cachewrite]
-    CacheWrite --> END([END])
-
+    Guard -- "Grounded / Sanitized Draft" --> Responder
+    Responder --> CacheWrite["10. Cache Write (TTL Store)"]
+    CacheWrite --> END([● Synthesized Answer & Sources])
 ```
 
 ---
 
-## 🏗️ Data Ingestion & Technology Stack
-
-```
-                                  ┌─────────────────────────────┐
-                                  │      SRKR Web Pages         │
-                                  └──────────────┬──────────────┘
-                                                 │ Crawler (BeautifulSoup + Markdownify)
-                                                 ▼
-┌───────────────────────────┐     ┌─────────────────────────────┐
-│  Academic / Admin PDFs    │     │   Scraped Markdown Files    │
-│  (Syllabus, IQAC, BOS...) │     │   (Departments, Life...)    │
-└─────────────┬─────────────┘     └──────────────┬──────────────┘
-              │                                  │
-              └─────────────────┬────────────────┘
-                                │
-                                ▼
-                 ┌──────────────────────────────┐
-                 │ Preprocessing & Cleaning     │
-                 │ - Strip nav/footer noise     │
-                 │ - Remove PDF cover pages     │
-                 │ - Skip MQP exam questions    │
-                 │ - Unicode sanitization       │
-                 └──────────────┬───────────────┘
-                                │
-                                ▼
-                 ┌──────────────────────────────┐
-                 │ Domain-Aware Chunking        │
-                 │ - MD: MarkdownHeaderSplitter │
-                 │ - PDF: Course Unit / Overlap │
-                 │ - Context Prepending         │
-                 └──────────────┬───────────────┘
-                                │
-                                ▼
-                 ┌──────────────────────────────┐
-                 │ Embedding Pipeline           │
-                 │ Jina Embeddings v5 (1024-d)  │
-                 └──────────────┬───────────────┘
-                                │
-                                ▼
-                 ┌──────────────────────────────┐
-                 │ Vector Database              │
-                 │ Qdrant Cloud Cluster         │
-                 └──────────────┬───────────────┘
-```
-
-### Core Technologies
-| Component | Tech Stack / Tool | Description |
-| :--- | :--- | :--- |
-| **Package Manager** | `uv` | High-performance Python project & dependency management |
-| **Scraper** | `requests` + `bs4` + `markdownify` | Converts HTML web pages to Markdown |
-| **Document Loaders** | `langchain-community` + `pypdf` | Custom MD & PDF loaders |
-| **Embedding Model** | `Jina AI` (`jina-embeddings-v5-text-small`) | 1024-dim dense embeddings with task-aware prefixes |
-| **Vector DB** | `Qdrant` (`qdrant-client`, `langchain-qdrant`) | Managed Qdrant Cloud cluster with HNSW indexing |
-| **LLMs / Inference** | `Groq` (Llama-3.3-70B) & `Google Gemini` | High-throughput generation and fallback |
-
----
-
-## 📚 Knowledge Base Taxonomy & Chunking Strategy
-
-### 1. Website / Markdown Data
-- **Scope**: Departments, Placements, Campus Life, Administration, Committees, College Statistics.
-- **Challenges**: Every scraped file initially contained ~30% repetitive navbar/footer boilerplate, broken image tags (`![Infosys](...)`), and isolated headers.
-- **Strategy**:
-  - Pre-clean boilerplate text before splitting (stripping nav links, copyright footers, theme preseters).
-  - Prepend context tag `[Source: SRKR <Page Title>]` to every chunk text.
-  - Retain structural headers (`MarkdownHeaderTextSplitter`) while folding numeric headers (`## 26`) into chunk bodies.
-
-### 2. Syllabus PDFs (R20, R23, R24 Regulations)
-- **Scope**: Course codes, course titles, L-T-P-C credits, objectives, course outcomes (COs), unit descriptions, textbooks.
-- **Challenges**: Fixed character splitters cut across tables, page headers ("SAGI RAMA..."), and mixed exam paper questions (MQPs).
-- **Strategy**:
-  - Filter out Model Question Papers (`*mqp*.pdf`, `*model_paper*.pdf`).
-  - Ignore repeated PDF cover pages (college header without course codes).
-  - Use larger section windows (1500–2000 chars) with 200 overlap to keep course unit definitions intact.
-
-### 3. Academic & Administrative Reports
-- **Scope**: IQAC, NAAC, NBA, BOS, NIRF reports, meeting minutes.
-- **Strategy**:
-  - Use paragraph-based `RecursiveCharacterTextSplitter` (1200 chars, 200 overlap).
-  - Inject PDF document title into payload metadata for precise filtering during retrieval.
-
----
-
-## 📂 Project Directory Structure
+## 📂 Project Structure
 
 ```
 chat_bot/
-├── crawler/
-│   └── scrape_srkrec.py        # Web crawler for harvesting SRKR website pages
-├── Data/
-│   ├── raw/                    # Unprocessed Markdown & PDF files
-│   └── processeddata/          # Generated chunks.jsonl & embeddings.jsonl
-├── Ingestion/
-│   ├── chunking/               # Custom splitters & strategy handlers
-│   │   ├── strategies/
-│   │   │   ├── md_strategy.py  # Markdown chunking logic
-│   │   │   └── pdf_strategy.py # PDF section-aware chunking logic
-│   │   └── chunker.py          # Master chunker dispatch
-│   ├── loaders/
-│   │   ├── md_loader.py        # Custom Markdown loader
-│   │   └── pdf_loader.py       # Custom PyPDF loader with unicode protection
-│   ├── embedder.py             # Jina AI Embedding client (1024-dim)
-│   ├── processor.py            # Preprocessing & noise reduction
-│   └── pipeline.py             # Main execution script for full ingestion pipeline
-├── config.py                   # Centralized settings & environment variables
-├── pyproject.toml              # Project dependencies & package configuration
-├── README.md                   # Project documentation & status
-└── .env                        # Environment keys (Qdrant, Jina, Gemini, Groq)
+├── agent/                      # LangGraph autonomous multi-agent pipeline
+│   ├── graph.py                # Graph compilation, conditional edges & state transitions
+│   ├── state.py                # AgentState schema and type definitions
+│   └── nodes/                  # Modular state graph execution nodes
+│       ├── cache.py            # In-memory query caching node
+│       ├── planner.py          # Query analysis, input rails, and sub-query generation
+│       ├── executor.py         # Parallel hybrid retrieval (dense + BM25 + RRF)
+│       ├── reranker.py         # Jina Cross-Encoder precision reranker
+│       ├── validator.py        # 7-point quality and entity verification gate
+│       ├── reformulator.py     # Diagnostic query expansion for retries
+│       ├── generator.py        # Factual, grounded answer generation
+│       ├── guard.py            # Output rail validation and PII sanitization
+│       └── responder.py        # Output formatting, citations, and response delivery
+├── app/                        # Shared business logic and backend services
+│   ├── models.py               # Data models (RetrievedChunk, ChatMessage, etc.)
+│   ├── ingestion/              # Ingestion pipeline, chunking, and loaders
+│   └── services/               # Core AI services
+│       ├── retrieval/          # Jina embedder, BM25, RRF fusion, and Qdrant retriever
+│       └── generation/         # LLM inference adapters and prompt templates
+├── backend/                    # FastAPI web server
+│   ├── run.py                  # Server entrypoint script
+│   └── app/
+│       ├── main.py             # FastAPI application and CORS configuration
+│       ├── api/                # REST and Server-Sent Events (SSE) chat endpoints
+│       └── core/               # API configuration and settings
+├── frontend/                   # Next.js 16 web application
+│   ├── src/                    # UI components, ChatWidget, and layout
+│   └── package.json            # React 19 and Tailwind CSS dependencies
+├── guardrails/                 # NeMo Guardrails configuration & custom actions
+│   ├── config/                 # Colang flows, rails, and prompts
+│   ├── actions.py              # Grounding verification and PII scrubbing actions
+│   └── service.py              # NeMo Guardrails runtime service
+├── crawler/                    # Web scrapers for harvesting college portal pages
+├── config.py                   # Centralized configuration loader with key failover
+├── .env.example                # Template for environment variables
+└── pyproject.toml              # Python project configuration (managed via uv)
 ```
 
 ---
 
-## 🚀 Setup & Execution Guide
+## 🛠️ How to Use This
 
 ### Prerequisites
+
 - **Python**: `>= 3.12`
-- **uv**: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **Node.js**: `>= 18.0` (for frontend)
+- **uv**: Fast Python package installer (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 
-### 1. Environment Configuration
-Create a `.env` file in the root directory:
+---
 
-```env
-# Qdrant Vector Store
-QDRANT_CLUSTER_ENDPOINT=https://your-qdrant-cluster-url.qdrant.tech:6333
-QDRANT_API_KEY=your_qdrant_api_key
-QDRANT_COLLECTION_NAME=srkr_knowledge_base
+### 1. Environment Setup
 
-# Jina Embeddings
-JINA_API_KEY=jina_your_api_key
+Copy the example environment template and configure your API credentials:
 
-# LLM Providers
-GEMINI_API_KEY=your_gemini_api_key
-GROQ_API_KEY=your_groq_api_key
+```bash
+cp .env.example .env
 ```
 
+Open `.env` and supply your API keys:
+- **Groq API Key**: LLM inference for Planner, Reformulator, and Generator.
+- **Qdrant Endpoint & API Key**: Vector storage and hybrid candidate search.
+- **Jina API Key**: Embeddings (`jina-embeddings-v5-text-small`) and Cross-Encoder reranking (`jina-reranker-v2-base-multilingual`).
+- **LangSmith Key** *(Optional)*: Tracing and observability.
+
+---
+
 ### 2. Install Dependencies
+
+Install all Python dependencies using `uv`:
+
 ```bash
 uv sync
 ```
 
-### 3. Run Web Crawler (Optional)
-To scrape or refresh raw web content:
+---
+
+### 3. Run the Backend API
+
+Start the FastAPI application:
+
 ```bash
+uv run python backend/run.py
+```
+
+The API server will launch at `http://localhost:8000`:
+- **Interactive Swagger Docs**: `http://localhost:8000/api/docs`
+- **Health Check**: `http://localhost:8000/api/health`
+- **SSE Streaming Chat Endpoint**: `POST http://localhost:8000/api/chat`
+
+---
+
+### 4. Run the Frontend UI
+
+In a separate terminal, install dependencies and launch the Next.js dev server:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` in your browser to interact with the chatbot interface.
+
+---
+
+### 5. Optional: Data Ingestion & Crawling
+
+To crawl new pages or re-ingest raw documents into Qdrant:
+
+```bash
+# Run crawler to update raw markdown files
 uv run crawler/scrape_srkrec.py
-```
 
-### 4. Run the Full Ingestion Pipeline
-To load raw data, clean boilerplate, chunk documents, generate embeddings, and upload to Qdrant:
-```bash
+# Run ingestion pipeline (chunking, embedding, Qdrant indexing)
 uv run Ingestion/pipeline.py
-```
-
----
-
-## 📊 Ingestion Optimization Benchmarks
-
-| Metric | Initial Pipeline | Optimized Pipeline |
-| :--- | :--- | :--- |
-| **Total Chunks** | ~25,956 | **~8,000 – 12,000** |
-| **Boilerplate Noise** | High (Navbars, Footers, Covers) | **Zero (Stripped)** |
-| **Embedding API Cost / Requests** | ~811 batches | **~250 – 375 batches** |
-| **Syllabus Granularity** | Broken across tables | **Preserved per Course / Unit** |
-| **Retrieval Accuracy** | Noise pollution | **High Precision Context** |
-
----
-
-
-## 🔮 Roadmap & Observability
-
-- [x] **Hybrid Search**: Integrate BM25 sparse keyword search alongside dense Qdrant vector retrieval.
-- [x] **Re-ranking**: Implement Jina Reranker v2 to re-rank top-K retrieved candidates before LLM context construction.
-- [x] **Observability**: Added **LangSmith** tracing across LangGraph nodes, sub-queries, BM25, RRF fusion, reranker, and LLM providers.
-- [ ] **Interactive UI**: Build a lightweight Next.js / Streamlit web interface for student queries.
-
-### 🔍 Enabling LangSmith Tracing
-
-To enable end-to-end tracing and monitoring in LangSmith, add the following variables to your `.env` file:
-
-```bash
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=lsv2_pt_...
-LANGSMITH_PROJECT=srkr-academic-advisor
-# Optional:
-LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 ```
