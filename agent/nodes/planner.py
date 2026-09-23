@@ -23,14 +23,14 @@ from agent.prompts import PLANNER_SYSTEM_PROMPT
 def _format_history_context(chat_history: List[Dict[str, str]]) -> str:
     """
     Formats conversation history for the planner prompt.
-    - Last 2 turns: kept verbatim (needed for coreference resolution).
+    - Last 6 messages (3 full turns): kept verbatim for robust coreference resolution.
     - Older turns: compressed into a compact summary to save tokens.
     """
     if not chat_history:
         return "None"
 
-    recent = chat_history[-2:]
-    older  = chat_history[:-2]
+    recent = chat_history[-6:]
+    older  = chat_history[:-6]
 
     parts: List[str] = []
 
@@ -40,10 +40,9 @@ def _format_history_context(chat_history: List[Dict[str, str]]) -> str:
         for msg in older:
             content = msg.get("content", "").strip()
             if content and msg.get("role") == "user":
-                # Take first 60 chars of each older user message as topic hint
                 topics.append(content[:60].rstrip() + ("..." if len(content) > 60 else ""))
         if topics:
-            parts.append(f"[Earlier context — user asked about: {'; '.join(topics)}]")
+            parts.append(f"[Earlier turns: {'; '.join(topics)}]")
 
     for msg in recent:
         role    = msg.get("role", "user").capitalize()

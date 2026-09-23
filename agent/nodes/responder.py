@@ -23,16 +23,16 @@ from agent.state import AgentState, RouteType
 from agent.prompts import DIRECT_RESPONDER_SYSTEM_PROMPT
 
 
-def _format_history_context(chat_history: List[Dict[str, str]]) -> str:
-    """Formats recent conversation history for conversational context."""
+def _format_history_context(chat_history: List[Dict[str, str]], limit: int = 10) -> str:
+    """Formats recent conversation history for conversational context and meta-queries."""
     if not chat_history:
         return "None"
-    recent = chat_history[-3:]
+    recent = chat_history[-limit:]
     parts = []
-    for msg in recent:
+    for idx, msg in enumerate(recent, 1):
         role = msg.get("role", "user").capitalize()
         content = msg.get("content", "").strip()
-        parts.append(f"{role}: {content}")
+        parts.append(f"Turn {idx} [{role}]: {content}")
     return "\n".join(parts)
 
 
