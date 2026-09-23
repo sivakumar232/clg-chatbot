@@ -66,6 +66,13 @@ def _fast_deterministic_entity_check(draft_answer: str, chunks: List[RetrievedCh
         if code not in corpus:
             return False, f"Course code '{code}' was mentioned in answer but not found in official context documents."
 
+    # Dynamic alias / identity fabrication check
+    alias_match = re.search(r"\b(commonly known as|also known as|known as|referred to as|aka|a\.k\.a\.)\b", draft_answer, re.IGNORECASE)
+    if alias_match:
+        matched_phrase = alias_match.group(0)
+        if matched_phrase.lower() not in corpus.lower():
+            return False, f"Generated answer asserted an unverified alias or identity equivalence ('{matched_phrase}') not found in official records."
+
     return True, None
 
 

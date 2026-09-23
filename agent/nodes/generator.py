@@ -39,17 +39,23 @@ STYLE & PRESENTATION GUIDELINES:
    - When presenting structured course data, subject codes, credits, or regulations, format them into clean, well-aligned Markdown TABLES.
    - Bold key names, lab titles, tools, and technical terms to make the response scannable and visually appealing.
 
-3. Strict Factual Grounding & Clean Text:
+3. Strict Factual Grounding & Entity Fidelity:
    - Base all statements SOLELY on the provided Context Blocks. Never speculate beyond what is documented.
+   - Entity Identity Fidelity: NEVER assume, invent, or bridge identity equivalences, nicknames, or aliases between the user's queried entity and names in the context (e.g. NEVER claim person A is "commonly known as" or "also known as" person B). If the user asks about an entity or full name not explicitly present in the records, report only what official records state without conflating different names or guessing connections.
    - Do NOT insert distracting in-text tags like [Source 1] or [Source 2] in the body.
    - Do NOT append a manual "Sources:" URL list at the end of your response, as verified sources are automatically parsed and displayed by the interface.
 
-4. Silent Self-Verification (before writing your response):
+4. Query Scope Containment:
+   - Answer strictly within the boundary of what was asked.
+   - If the user asks for a single specific role, individual, policy, or course (e.g. "Who is the Principal?"), answer directly and concisely for that requested subject. Do NOT volunteer surrounding entities, unrelated faculty, or sibling roles from the same context block unless the user explicitly requested a list, comparison, or full overview.
+   - When the user asks for an overview, comparison, or aggregate listing (e.g. "compare X and Y", "list all departments"), provide the complete structured comparison or table.
+
+5. Silent Self-Verification (before writing your response):
    - Mentally verify every course code, credit count, faculty name, and regulation number against the Context Blocks.
    - If a specific fact (e.g., a course code or credit) does NOT appear in any Context Block, do NOT include it.
    - Do NOT mention this verification step in your response — just produce clean, grounded output.
 
-5. Strict Privacy & PII Protection:
+6. Strict Privacy & PII Protection:
    - NEVER output phone numbers, mobile numbers, WhatsApp numbers, residential/home addresses, personal email addresses, salary numbers, or private personal details under ANY circumstances, EVEN IF THEY APPEAR in the Context Blocks or disclosure PDFs.
    - Only official institutional email addresses or campus office locations may be shared.
    - If the user asks for phone numbers, residential addresses, or private details, state that personal contact numbers are private and not disclosed, and direct them to official departmental email or campus offices.
@@ -63,6 +69,8 @@ def _build_generator_prompt(
     degraded_reason: str | None,
     contradictions: List[str],
     guard_feedback: str | None,
+    intent: Dict[str, Any] | None = None,
+    query_type: str | None = None,
 ) -> str:
     """Assembles the complete prompt with context blocks and dynamic constraints."""
     context_blocks = []
@@ -74,6 +82,32 @@ def _build_generator_prompt(
     joined_context = "\n".join(context_blocks) if context_blocks else "No relevant context found."
 
     instructions = []
+
+    # Dynamic scope and entity guidance
+    intent = intent or {}
+    is_aggregate = intent.get("is_aggregate", False)
+    entities = intent.get("entities", [])
+    q_type = str(query_type or "").lower()
+
+    if not is_aggregate and ("single" in q_type or not q_type):
+        instructions.append(
+            "SCOPE CONSTRAINT: The question targets a specific, individual detail. "
+            "Address only the requested subject directly. Do NOT volunteer unrequested adjacent roles, "
+            "sibling faculty, or surrounding table rows present in the context blocks."
+        )
+    elif is_aggregate:
+        instructions.append(
+            "AGGREGATE SCOPE: The user requested a comprehensive overview or list. "
+            "Format the verified records into a well-structured markdown table or bullet list."
+        )
+
+    if entities:
+        ent_list = ", ".join(f"'{e}'" for e in entities)
+        instructions.append(
+            f"TARGET ENTITY FIDELITY: Query explicitly asks about: {ent_list}. "
+            f"Check exact match against records. If a queried name or alias differs from official records, "
+            f"state only the exact record text without synthesizing aliases or assuming they are the same entity."
+        )
 
     if degraded:
         instructions.append(
@@ -95,12 +129,17 @@ def _build_generator_prompt(
         instructions.append(
             f"GUARD REVISION FEEDBACK (Fix previous draft):\n"
             f"- {guard_feedback}\n"
-            f"- Correct any unverified claims or course codes strictly."
+            f"- Correct any unverified claims, assumed aliases, or course codes strictly."
         )
 
     special_section = ""
     if instructions:
         special_section = "\nSPECIAL INSTRUCTIONS:\n" + "\n".join(f"- {inst}" for inst in instructions) + "\n"
+
+    if not is_aggregate and ("single" in q_type or not q_type):
+        closing_instruction = "Provide a direct, concise, and focused response answering only the requested question without meta-disclaimers or unrequested adjacent details."
+    else:
+        closing_instruction = "Please provide a well-structured response using clean markdown headings (### ), bullet points, and tables where suitable. Jump straight into the verified information without meta-disclaimers or manual source URLs."
 
     prompt = (
         f"CONTEXT BLOCKS:\n"
@@ -109,7 +148,7 @@ def _build_generator_prompt(
         f"====================\n"
         f"{special_section}\n"
         f"Student/User Question: \"{query}\"\n\n"
-        f"Please provide a well-structured response using clean markdown headings (### ), bullet points, and tables where suitable. Jump straight into the verified information without meta-disclaimers or manual source URLs."
+        f"{closing_instruction}"
     )
     return prompt
 
@@ -175,7 +214,8 @@ def generator_node(state: AgentState) -> AgentState:
     degraded = state.get("degraded", False)
     degraded_reason = state.get("degraded_reason")
     contradictions = state.get("contradictions", [])
-    guard_feedback = state.get("guard_feedback")
+    intent = state.get("intent") or {}
+    query_type = state.get("query_type")
 
     prompt = _build_generator_prompt(
         query=query,
@@ -184,6 +224,8 @@ def generator_node(state: AgentState) -> AgentState:
         degraded_reason=degraded_reason,
         contradictions=contradictions,
         guard_feedback=guard_feedback,
+        intent=intent,
+        query_type=query_type,
     )
 
     t0 = time.time()

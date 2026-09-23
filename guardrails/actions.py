@@ -75,6 +75,13 @@ def check_course_code_grounding(response_text: str, context_text: str) -> Tuple[
         if code not in context_text:
             return False, f"Course code '{code}' mentioned in response was not found in official context."
 
+    # Dynamic alias / identity fabrication check
+    alias_match = re.search(r"\b(commonly known as|also known as|known as|referred to as|aka|a\.k\.a\.)\b", response_text, re.IGNORECASE)
+    if alias_match:
+        matched_phrase = alias_match.group(0)
+        if matched_phrase.lower() not in context_text.lower():
+            return False, f"Response asserted an unverified alias or identity equivalence ('{matched_phrase}') not present in official context."
+
     return True, None
 
 
