@@ -19,6 +19,14 @@ class ChatRequest(BaseModel):
         default_factory=list,
         description="Previous conversation turns for context and pronoun resolution"
     )
+    request_id: Optional[str] = Field(
+        default=None,
+        description="Unique client request ID to support instant cancellation via /api/chat/stop"
+    )
+
+
+class StopRequest(BaseModel):
+    request_id: str = Field(..., description="The request ID to cancel immediately")
 
 
 class ChatResponse(BaseModel):

@@ -100,8 +100,18 @@ def clarifier_node(state: AgentState) -> AgentState:
     slot_needed = intent.get("slot_needed") or "missing_detail"
     category = intent.get("category") or "general"
 
+    # Format recent chat history for context-aware disambiguation
+    chat_history = state.get("chat_history", [])
+    history_lines = []
+    for msg in chat_history[-3:]:
+        role = msg.get("role", "user").capitalize()
+        content = msg.get("content", "").strip()
+        history_lines.append(f"{role}: {content}")
+    history_str = "\n".join(history_lines) if history_lines else "None"
+
     # Build prompt for Clarifier LLM
     prompt_payload = (
+        f"Conversation History:\n{history_str}\n\n"
         f"User Query: \"{raw_query}\"\n"
         f"Resolved Query: \"{rewritten_query}\"\n"
         f"Intent Category: {category}\n"
@@ -121,7 +131,10 @@ def clarifier_node(state: AgentState) -> AgentState:
 
     # Resiliency fallback if LLM call fails
     if not result_dict or not isinstance(result_dict, dict):
-        question = f"Could you please specify which {slot_needed.replace('_', ' ')} you are inquiring about?"
+        if "person" in slot_needed.lower():
+            question = "Could you please specify which person or faculty member you are referring to?"
+        else:
+            question = f"Could you please specify which {slot_needed.replace('_', ' ')} you are inquiring about?"
         options = []
     else:
         question = result_dict.get("question") or f"Could you please clarify your question regarding '{raw_query}'?"

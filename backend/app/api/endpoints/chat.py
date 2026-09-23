@@ -8,11 +8,9 @@ Server-Sent Events (SSE) as each node in the graph executes.
 
 import asyncio
 import json
-import logging
-import sys
-from pathlib import Path
 import threading
-from typing import AsyncGenerator
+import uuid
+from typing import AsyncGenerator, Dict
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -25,9 +23,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agent.graph import app
 from agent.state import AgentState
-from backend.app.schemas.chat import ChatRequest, ChatResponse
+from backend.app.schemas.chat import ChatRequest, ChatResponse, StopRequest
 
 router = APIRouter()
+
+# Registry of active streaming cancellations: {request_id: threading.Event}
+_ACTIVE_STREAMS: Dict[str, threading.Event] = {}
+_STREAMS_LOCK = threading.Lock()
 
 
 def _format_sse(event_data: dict) -> str:
@@ -38,6 +40,7 @@ def _format_sse(event_data: dict) -> str:
 async def _stream_agent_execution(
     query: str,
     chat_history: list,
+    request_id: str,
     raw_request: Request | None = None,
 ) -> AsyncGenerator[str, None]:
     """
@@ -70,6 +73,9 @@ async def _stream_agent_execution(
     final_clarification = None
 
     stop_event = threading.Event()
+    with _STREAMS_LOCK:
+        _ACTIVE_STREAMS[request_id] = stop_event
+
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -239,6 +245,8 @@ async def _stream_agent_execution(
             })
     finally:
         stop_event.set()
+        with _STREAMS_LOCK:
+            _ACTIVE_STREAMS.pop(request_id, None)
         watcher_task.cancel()
 
 
@@ -247,19 +255,39 @@ async def chat_stream(request: ChatRequest, raw_request: Request):
     """
     Server-Sent Events (SSE) endpoint:
     Streams step-by-step agentic transitions and the final grounded response.
-    Supports cancellation when client disconnects or aborts.
+    Supports cancellation when client disconnects or calls /api/chat/stop.
     """
+    req_id = request.request_id or str(uuid.uuid4())
     history = [{"role": m.role, "content": m.content} for m in (request.chat_history or [])]
     return StreamingResponse(
-        _stream_agent_execution(query=request.query, chat_history=history, raw_request=raw_request),
+        _stream_agent_execution(
+            query=request.query,
+            chat_history=history,
+            request_id=req_id,
+            raw_request=raw_request,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream",
             "X-Accel-Buffering": "no",
+            "X-Request-ID": req_id,
         },
     )
+
+
+@router.post("/stop")
+async def stop_stream(payload: StopRequest):
+    """Signals an active streaming agent pipeline to halt execution immediately."""
+    with _STREAMS_LOCK:
+        event = _ACTIVE_STREAMS.get(payload.request_id)
+        if event:
+            event.set()
+            logger.info("Pipeline %s cancelled via /api/chat/stop.", payload.request_id)
+            return {"status": "stopped", "request_id": payload.request_id}
+    return {"status": "not_active_or_completed", "request_id": payload.request_id}
+
 
 
 
