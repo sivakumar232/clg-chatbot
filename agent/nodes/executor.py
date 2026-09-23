@@ -49,11 +49,14 @@ def _execute_single_subquery(sub_q: Dict[str, Any], retriever: HybridRetriever) 
     if metadata_filter and isinstance(metadata_filter, dict):
         try:
             from qdrant_client.models import Filter, FieldCondition, MatchValue
-            conditions = [
-                FieldCondition(key=k, match=MatchValue(value=v))
-                for k, v in metadata_filter.items()
-                if v is not None
-            ]
+            conditions = []
+            for k, v in metadata_filter.items():
+                if v is None:
+                    continue
+                # Map department to category in Qdrant payloads if needed
+                field_key = "category" if str(k).lower() == "department" else str(k)
+                val = str(v).lower() if field_key == "category" else v
+                conditions.append(FieldCondition(key=field_key, match=MatchValue(value=val)))
             if conditions:
                 qdrant_filter = Filter(must=conditions)
         except Exception:
@@ -69,6 +72,18 @@ def _execute_single_subquery(sub_q: Dict[str, Any], retriever: HybridRetriever) 
         )
         return chunks
     except Exception as e:
+        if qdrant_filter is not None:
+            print(f"Filtered retrieval failed for '{query_text}' ({e}). Retrying without filter...")
+            try:
+                return retriever.retrieve(
+                    query=query_text,
+                    top_k_dense=40,
+                    top_k_final=20,
+                    qdrant_filter=None,
+                )
+            except Exception as e2:
+                print(f"Fallback retrieval failed for '{query_text}': {e2}")
+                return []
         print(f"Failed sub-query retrieval for '{query_text}': {e}")
         return []
 

@@ -138,7 +138,8 @@ def _check_5_entity_coverage(
 ) -> Tuple[bool, str]:
     """
     Check 5: Entity coverage.
-    Ensures user-specified course codes or professor names exist in the retrieved text.
+    Ensures user-specified course codes, professor names, or target entities exist in the retrieved text.
+    Supports token-level matching and standard academic aliases (e.g. HOD -> Head / Coordinator).
     """
     entities = intent.get("entities", [])
     if not entities or not isinstance(entities, list):
@@ -149,7 +150,26 @@ def _check_5_entity_coverage(
 
     for ent in entities:
         ent_str = str(ent).strip().lower()
-        if len(ent_str) >= 3 and ent_str not in corpus:
+        if len(ent_str) < 3:
+            continue
+
+        # 1. Direct substring match
+        if ent_str in corpus:
+            continue
+
+        # 2. Token-level overlap (e.g. "HOD CSE" -> both "hod"/"head" and "cse" in corpus)
+        tokens = [t for t in re.findall(r"\w+", ent_str) if len(t) > 1]
+        if not tokens:
+            continue
+
+        matched_tokens = 0
+        for tok in tokens:
+            if tok in corpus:
+                matched_tokens += 1
+            elif tok == "hod" and ("head" in corpus or "coordinator" in corpus or "chairperson" in corpus):
+                matched_tokens += 1
+
+        if (matched_tokens / len(tokens)) < 0.6:
             missing_entities.append(ent)
 
     if missing_entities:

@@ -147,7 +147,7 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
                     yield _format_sse({
                         "type": "step",
                         "node": "guard",
-                        "label": "Answer faithfulness verified (Deterministic check)",
+                        "label": "NeMo Guardrails: Output verified & PII sanitized" if g_status == "grounded" else "NeMo Guardrails: Ungrounded claim flagged",
                         "guard_status": g_status,
                     })
 

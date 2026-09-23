@@ -175,6 +175,27 @@ def planner_node(state: AgentState) -> AgentState:
     raw_query = state.get("query", "").strip()
     chat_history = state.get("chat_history", [])
 
+    # ── 0. NeMo Guardrails: Input Rails Check ───────────────────────────────
+    try:
+        from guardrails import get_guardrails_service
+        guard_service = get_guardrails_service()
+        input_guard = guard_service.check_input(raw_query)
+        if not input_guard.allowed:
+            print(f"  🛑 NeMo Guardrails Input Rail Blocked: {input_guard.action} ({input_guard.reason})")
+            return {
+                "rewritten_query": raw_query,
+                "route": RouteType.DIRECT,
+                "query_type": QueryType.SINGLE,
+                "intent": {
+                    "category": input_guard.action,
+                    "refusal_message": input_guard.refusal_message,
+                    "reason": input_guard.reason,
+                },
+                "sub_queries": [],
+            }
+    except Exception as e:
+        print(f"NeMo Guardrails input check warning: {e}")
+
     history_str = _format_history_context(chat_history)
     prompt_payload = (
         f"Conversation History:\n{history_str}\n\n"

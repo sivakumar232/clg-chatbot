@@ -22,7 +22,7 @@ class Settings:
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
 
     GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     GEMINI_EMB_MODEL = "gemini-embedding-001"
 
     # Jina keys bucket (comma-separated or single)
@@ -36,8 +36,17 @@ class Settings:
     LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT", "srkr-academic-advisor")
     LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING") or os.getenv("LANGCHAIN_TRACING_V2", "true" if (os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY")) else "false")
     LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    # NeMo Guardrails
+    GUARDRAILS_DIR: Path = ROOT_DIR / "guardrails"
+    GAURDRAILS_DIR: Path = GUARDRAILS_DIR  # Backward-compatible alias
     
 settings = Settings()
+
+# Configure NeMo Guardrails / OpenAI compatible environment variables
+if settings.GROQ_API_KEY and not os.getenv("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = settings.GROQ_API_KEY
+if settings.GROQ_API_KEY and not os.getenv("GROQ_API_KEY"):
+    os.environ["GROQ_API_KEY"] = settings.GROQ_API_KEY
 
 # Configure LangChain / LangSmith environment variables for LangGraph tracing
 if settings.LANGSMITH_API_KEY:

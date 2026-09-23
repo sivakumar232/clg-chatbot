@@ -97,7 +97,7 @@ class JinaEmbedder:
                     JINA_URL,
                     headers=headers,
                     json=payload,
-                    timeout=120,
+                    timeout=20,
                 )
             except requests.exceptions.RequestException as exc:
                 wait = min(30, 2 ** (attempt + 1))

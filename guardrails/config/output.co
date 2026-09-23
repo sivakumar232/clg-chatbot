@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# output.co
+# ─────────
+# Production-Grade NeMo Guardrails: Output Verification Rails for College Chatbot
+# Enforces: Fact Grounding, Anti-Hallucination, PII Scrubbing (Redacting phone numbers
+# and private contact info), and Academic Tone Verification.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Bot Canonical Responses for Output Violations ────────────────────────────
+
+define bot inform ungrounded claim
+  "I apologize, but I could not verify all specific claims against our official college records and academic handbooks. To ensure accuracy, please consult your department academic coordinator or the official academic syllabus handbook."
+
+define bot inform privacy violation
+  "This response contained confidential personal contact details that violate campus privacy policy. The contact details have been withheld. Please contact the official department office."
+
+define bot fallback sanitized answer
+  "The requested academic information is subject to official department verification. Please refer to the official college academic calendar and department notice board."
+
+
+# ── Output Rail Flows ────────────────────────────────────────────────────────
+
+define flow self check facts
+  $is_grounded = execute check_grounding_action
+  if not $is_grounded
+    bot inform ungrounded claim
+    stop
+
+define flow mask sensitive pii
+  $sanitized_output = execute scrub_pii_action
+  if $sanitized_output
+    $bot_response = $sanitized_output
+
+define flow check output
+  do self check facts
+  do mask sensitive pii
