@@ -25,6 +25,7 @@ from langsmith import traceable
 from config import settings
 from agent.state import AgentState, GuardStatus
 from app.models import RetrievedChunk
+from guardrails.actions import scrub_pii_text
 
 
 GUARD_SYSTEM_PROMPT = """You are a strict academic verification guard for an educational institution.
@@ -42,22 +43,6 @@ Output MUST be a JSON object:
 }
 """
 
-
-def _scrub_pii_and_phone_numbers(text: str) -> str:
-    """
-    Deterministically scrubs phone numbers, mobile numbers, and personal contact digits
-    from the draft answer to guarantee zero PII leakage.
-    """
-    if not text:
-        return text
-
-    # Matches Indian mobile numbers (+91-..., 9848..., 9493671967, etc.)
-    text = re.sub(r'(?:\+91[\s-]?)?[6-9]\d{9}\b', '[Contact number withheld for privacy]', text)
-    # Formats like 98484-66678 or 98484 66678
-    text = re.sub(r'\b[6-9]\d{4}[\s-]\d{5}\b', '[Contact number withheld for privacy]', text)
-    # Formats like 08816-223344 (landlines with STD code)
-    text = re.sub(r'\b0\d{3,5}[-\s]?\d{6,8}\b', '[Contact number withheld for privacy]', text)
-    return text
 
 
 def _fast_deterministic_entity_check(draft_answer: str, chunks: List[RetrievedChunk]) -> Tuple[bool, str | None]:
@@ -168,18 +153,28 @@ def guard_node(state: AgentState) -> AgentState:
 
     t0 = time.time()
 
-    # Fast deterministic check: catch any fabricated course codes
-    is_grounded, feedback = _fast_deterministic_entity_check(draft, chunks)
-
-    # Always scrub phone numbers and PII deterministically
-    sanitized_draft = _scrub_pii_and_phone_numbers(draft)
+    # NeMo Guardrails Output Rail execution (includes PII scrubbing + grounding check)
+    try:
+        from guardrails import get_guardrails_service
+        out_guard = get_guardrails_service().check_output(
+            query=state.get("query", ""),
+            draft_answer=draft,
+            context_chunks=chunks,
+        )
+        is_grounded = out_guard.allowed
+        feedback = out_guard.reason
+        sanitized_draft = out_guard.sanitized_text or draft
+    except Exception as e:
+        print(f"NeMo Guardrails output check warning, using local fallback: {e}")
+        is_grounded, feedback = _fast_deterministic_entity_check(draft, chunks)
+        sanitized_draft, _ = scrub_pii_text(draft)
 
     elapsed = time.time() - t0
 
     # Decision routing
     if is_grounded:
         print("=" * 60)
-        print(f"  ANSWER GUARD: PASSED (Deterministic check in {elapsed:.2f}s)")
+        print(f"  NEMO OUTPUT GUARD: PASSED in {elapsed:.2f}s")
         print("=" * 60 + "\n")
         return {
             "draft_answer":   sanitized_draft,

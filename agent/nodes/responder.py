@@ -21,6 +21,9 @@ from agent.state import AgentState, RouteType
 
 def _build_direct_response(query: str, intent: Dict[str, Any]) -> str:
     """Generates polite, professional responses for conversational or out-of-scope inputs."""
+    if intent.get("refusal_message"):
+        return intent["refusal_message"]
+
     category = str(intent.get("category", "")).lower()
     q_lower = query.lower().strip()
 
@@ -56,9 +59,8 @@ def responder_node(state: AgentState) -> AgentState:
     Reads:  cache_hit, cached_response, route, intent, draft_answer, reranked_chunks, pruned_chunks, provider, degraded
     Writes: answer, sources, provider
     """
-    # ── 1. Cache Hit Path ────────────────────────────────────────────────────
-    if state.get("cache_hit") and state.get("cached_response"):
-        cached = state["cached_response"]
+    cached = state.get("cached_response")
+    if state.get("cache_hit") and cached:
         print("  ✓ Returning cached response (< 1ms).")
         return {
             "answer":   cached.get("answer", ""),
