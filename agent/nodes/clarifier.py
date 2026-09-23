@@ -21,29 +21,8 @@ from langsmith import traceable
 
 from config import settings
 from agent.state import AgentState, ClarificationPayload
+from agent.prompts import CLARIFIER_SYSTEM_PROMPT
 
-
-CLARIFIER_SYSTEM_PROMPT = """You are the Clarification Specialist for the College AI Academic Assistant.
-The user asked a query that is ambiguous or under-specified because it lacks critical parameters needed to give an accurate answer (e.g., asking for syllabus without department, regulations without batch/regulation code, fees without fee type, or hostel without hostel type).
-
-Your task:
-1. Generate a polite, natural, and concise clarifying question asking the user for the specific missing detail.
-2. Generate 3 to 6 distinct, highly relevant quick-reply options (chips) that the user can click to instantly clarify.
-
-Guidelines:
-- Tailor the question specifically to the user's query (do NOT use generic robotic templates).
-- Keep the question concise (1-2 sentences max).
-- Options MUST be short, clean labels (e.g. "CSE", "ECE", "R20 Regulation", "R23 Regulation", "Tuition Fee", "Boys Hostel").
-- For engineering departments, common ones include: CSE, ECE, CSD, IT, AIDS, Mechanical, Civil, EEE.
-- For regulations, common ones include: R20 Regulation, R23 Regulation.
-- For fee types, common ones include: Tuition Fee, Hostel & Mess Fee, Bus Transport Fee, Exam Fee.
-
-Output MUST be a valid JSON object matching this schema:
-{
-  "question": "string",
-  "options": ["string", "string", "string"]
-}
-"""
 
 
 @traceable(name="Groq Clarifier LLM Inference", run_type="llm")

@@ -26,22 +26,8 @@ from config import settings
 from agent.state import AgentState, GuardStatus
 from app.models import RetrievedChunk
 from guardrails.actions import scrub_pii_text
+from agent.prompts import GUARD_SYSTEM_PROMPT
 
-
-GUARD_SYSTEM_PROMPT = """You are a strict academic verification guard for an educational institution.
-Your job is to determine if a generated answer is strictly grounded in and faithful to the provided context blocks.
-
-EVALUATION CRITERIA:
-1. Every factual statement (course code, credit number, faculty designation, policy rule) MUST be supported by the context.
-2. No hallucinated course codes or extrapolated numbers that do not appear in the context.
-3. If the answer accurately reflects the context or states that certain facts could not be found, mark it as grounded.
-
-Output MUST be a JSON object:
-{
-  "is_grounded": true | false,
-  "reason": "Clear explanation of what claim was unsupported, or null if grounded"
-}
-"""
 
 
 
