@@ -8,8 +8,11 @@ Server-Sent Events (SSE) as each node in the graph executes.
 
 import asyncio
 import json
+import logging
+import sys
 import threading
 import uuid
+from pathlib import Path
 from typing import AsyncGenerator, Dict
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -138,6 +141,16 @@ async def _stream_agent_execution(
                             "node": "cache",
                             "label": "Cache Hit (< 1ms)" if hit else "Checking in-memory cache",
                             "status": "hit" if hit else "miss",
+                        })
+
+                    elif node_name == "input_rail":
+                        status = node_output.get("input_rail_status", "allowed")
+                        is_blocked = (status == "blocked")
+                        yield _format_sse({
+                            "type": "step",
+                            "node": "input_rail",
+                            "label": "NeMo Guardrails: Input Blocked" if is_blocked else "NeMo Guardrails: Input Safety Passed",
+                            "status": status,
                         })
 
                     elif node_name == "planner":

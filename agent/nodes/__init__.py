@@ -1,6 +1,7 @@
 """agent/nodes/__init__.py — exports all node callables for graph.py."""
 
 from agent.nodes.cache        import cache_node, cache_write_node
+from agent.nodes.input_rail   import input_rail_node
 from agent.nodes.planner      import planner_node
 from agent.nodes.clarifier    import clarifier_node
 from agent.nodes.executor     import executor_node
@@ -14,6 +15,7 @@ from agent.nodes.responder    import responder_node
 __all__ = [
     "cache_node",
     "cache_write_node",
+    "input_rail_node",
     "planner_node",
     "clarifier_node",
     "executor_node",

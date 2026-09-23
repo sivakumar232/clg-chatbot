@@ -23,6 +23,7 @@ if __name__ == "__main__":
         host=api_settings.HOST,
         port=api_settings.PORT,
         reload=True,
+        reload_dirs=[str(ROOT_DIR / "agent"), str(ROOT_DIR / "backend"), str(ROOT_DIR / "guardrails")],
         app_dir=str(ROOT_DIR),
         log_level="info",
     )
