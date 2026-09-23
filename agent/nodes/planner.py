@@ -31,7 +31,15 @@ TASKS:
      * Conversational greetings (e.g. "hi", "hello", "how are you"), compliments.
      * Queries totally out-of-scope of college academics (e.g., general world history, cooking, cricket, politics).
      * Privacy & Security Restrictions: Requests asking for personal phone numbers, mobile numbers, WhatsApp numbers, residential/home addresses, personal email IDs, salaries, or private personal data of faculty, staff, or students. Set intent category to "privacy_restriction".
-   - "needs_retrieval": Legitimate queries seeking academic college information (syllabi, courses, departments, regulations like R19/R20/R23/R24, faculty designations, official department offices, administration, fees, exams, placements, admissions, campus facilities, clubs).
+   - "clarify":
+     * Ambiguous, under-specified, or incomplete college queries where critical parameters are missing to perform accurate retrieval. For example:
+       - Asking for "syllabus", "subjects", "curriculum", "course structure" without specifying which department/branch.
+       - Asking for "academic regulations", "curriculum rules", "detention rules", "grading criteria" without specifying batch/regulation (e.g. R20 or R23) or department.
+       - Asking for "fee structure" or "fees" without specifying whether tuition fee, hostel fee, or bus/transport fee.
+       - Asking for "hostel details" without specifying boys or girls hostel.
+       - Asking for "placements statistics" without specifying year or department.
+       CRITICAL: If the chat history already provides the missing parameter, DO NOT clarify! Rewrite the query with the context and route to "needs_retrieval".
+   - "needs_retrieval": Legitimate queries seeking academic college information with sufficient context (syllabi with department, courses, specific regulations like R19/R20/R23, faculty designations, official department offices, administration, fees with category, exams, placements, admissions, campus facilities, clubs).
 
 3. Query Type:
    - "single_query": Focused question on one entity or topic.
@@ -39,22 +47,23 @@ TASKS:
    - "multi_hop_query": Aggregate/broad query across multiple departments/entities (e.g., "list all HODs", "all engineering branches").
 
 4. Intent:
-   - Extract the user's goal: category (e.g., "syllabus", "faculty", "placements", "admin", "exam", "general"), department (e.g. "CSE", "ECE", "AIDS", "MECH", "CIVIL", "IT", "CSBS", "EEE" if mentioned or inferred), regulation ("R20", "R23", "R24" if mentioned), is_aggregate (true/false), and specific entities (e.g. course codes like "CS3201", faculty names).
+   - Extract the user's goal: category (e.g., "syllabus", "faculty", "placements", "admin", "exam", "fees", "hostel", "general"), department (e.g. "CSE", "ECE", "AIDS", "MECH", "CIVIL", "IT", "CSBS", "EEE" if mentioned or inferred), regulation ("R20", "R23", "R24" if mentioned), slot_needed (if route is "clarify", specify the missing parameter e.g. "department", "regulation", "fee_type", "year", "hostel"), is_aggregate (true/false), and specific entities (e.g. course codes like "CS3201", faculty names).
 
 5. Sub-queries:
-   - If route == "direct", sub_queries MUST be [].
+   - If route == "direct" or route == "clarify", sub_queries MUST be [].
    - If route == "needs_retrieval", produce 1 to 4 distinct, keyword-rich search queries optimized for hybrid search (dense + lexical). Avoid conversational filler words.
    - Optionally attach a metadata_filter dict (e.g. {"department": "CSE"} or {"regulation": "R23"}) only when explicitly confident; otherwise set to null.
 
 Output MUST be a JSON object with this exact schema:
 {
   "rewritten_query": "string",
-  "route": "direct" | "needs_retrieval",
+  "route": "direct" | "clarify" | "needs_retrieval",
   "query_type": "single_query" | "sub_query" | "multi_hop_query",
   "intent": {
     "category": "string",
     "department": "string or null",
     "regulation": "string or null",
+    "slot_needed": "string or null",
     "is_aggregate": boolean,
     "entities": ["string"]
   },
@@ -229,7 +238,9 @@ def planner_node(state: AgentState) -> AgentState:
     
     # Route
     raw_route = str(plan_dict.get("route", "")).lower()
-    if "direct" in raw_route:
+    if "clarif" in raw_route:
+        route = RouteType.CLARIFY
+    elif "direct" in raw_route:
         route = RouteType.DIRECT
     else:
         route = RouteType.NEEDS_RETRIEVAL

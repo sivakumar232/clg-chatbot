@@ -27,5 +27,6 @@ class ChatResponse(BaseModel):
     sources: List[str] = Field(default_factory=list)
     provider: str
     route: Optional[str] = None
+    clarification: Optional[Dict[str, Any]] = None
     cache_hit: bool = False
     degraded: bool = False

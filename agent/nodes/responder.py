@@ -81,6 +81,17 @@ def responder_node(state: AgentState) -> AgentState:
             "provider": "Direct",
         }
 
+    # ── 3. Clarification Route ───────────────────────────────────────────────
+    if route == RouteType.CLARIFY:
+        clarification = state.get("clarification")
+        answer = state.get("answer") or (clarification.get("question") if clarification else "Could you please clarify your question?")
+        return {
+            "answer":        answer,
+            "sources":       [],
+            "provider":      "Clarifier",
+            "clarification": clarification,
+        }
+
     # ── 3. RAG Route (Format Final Answer with Sources) ──────────────────────
     draft = state.get("draft_answer", "I could not find sufficient documentation in college records.")
     chunks = state.get("pruned_chunks") or state.get("reranked_chunks", [])

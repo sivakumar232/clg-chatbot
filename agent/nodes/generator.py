@@ -214,6 +214,7 @@ def generator_node(state: AgentState) -> AgentState:
     degraded = state.get("degraded", False)
     degraded_reason = state.get("degraded_reason")
     contradictions = state.get("contradictions", [])
+    guard_feedback = state.get("guard_feedback")
     intent = state.get("intent") or {}
     query_type = state.get("query_type")
 

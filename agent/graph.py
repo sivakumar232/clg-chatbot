@@ -12,8 +12,9 @@ Compiles the LangGraph StateGraph matching the updated Agentic RAG architecture:
       ▼                                                     │
     planner ───────── [direct] ─────────────────────────────┤
       │                                                     │
-    [needs retrieval]                                       │
-      ▼                                                     │
+      ├────────────── [clarify] ─────► clarifier ───────────┤
+      │                                                     │
+      ▼ [needs retrieval]                                   │
     executor ◄──────────────────┐                           │
       │                         │                           │
       ▼                         │                           │
@@ -49,6 +50,7 @@ from agent.nodes import (
     cache_node,
     cache_write_node,
     planner_node,
+    clarifier_node,
     executor_node,
     reranker_node,
     validator_node,
@@ -75,6 +77,8 @@ def route_after_planner(state: AgentState) -> str:
     route = state.get("route", RouteType.NEEDS_RETRIEVAL)
     if route == RouteType.DIRECT:
         return "responder"
+    if route == RouteType.CLARIFY:
+        return "clarifier"
     return "executor"
 
 
@@ -109,6 +113,7 @@ def build_graph() -> StateGraph:
     # ── Register all nodes ────────────────────────────────────────────────────
     graph.add_node("cache",        cache_node)
     graph.add_node("planner",      planner_node)
+    graph.add_node("clarifier",    clarifier_node)
     graph.add_node("executor",     executor_node)
     graph.add_node("reranker",     reranker_node)
     graph.add_node("validator",    validator_node)
@@ -137,9 +142,13 @@ def build_graph() -> StateGraph:
         route_after_planner,
         {
             "responder": "responder",
+            "clarifier": "clarifier",
             "executor":  "executor",
         },
     )
+
+    # ── Clarifier to Responder ────────────────────────────────────────────────
+    graph.add_edge("clarifier", "responder")
 
     # ── Retrieval loop ────────────────────────────────────────────────────────
     graph.add_edge("executor",  "reranker")

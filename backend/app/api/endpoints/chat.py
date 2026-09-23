@@ -60,6 +60,7 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
     final_sources = []
     final_provider = "Campus Advisor"
     final_degraded = False
+    final_clarification = None
 
     try:
         # Run the synchronous LangGraph stream in a thread pool to avoid
@@ -93,6 +94,15 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
                         "route": route,
                         "rewritten_query": rewritten,
                         "sub_queries": sub_queries,
+                    })
+
+                elif node_name == "clarifier":
+                    clar_payload = node_output.get("clarification")
+                    yield _format_sse({
+                        "type": "step",
+                        "node": "clarifier",
+                        "label": "Disambiguating query with quick-reply options",
+                        "clarification": clar_payload,
                     })
 
                 elif node_name == "executor":
@@ -155,13 +165,15 @@ async def _stream_agent_execution(query: str, chat_history: list) -> AsyncGenera
                     final_answer = node_output.get("answer", "")
                     final_sources = node_output.get("sources", [])
                     final_provider = node_output.get("provider", "Groq")
+                    final_clarification = node_output.get("clarification")
 
-        # Emit completion payload with verified answer and sources
+        # Emit completion payload with verified answer, sources, and clarification
         yield _format_sse({
             "type": "done",
             "answer": final_answer,
             "sources": final_sources,
             "provider": final_provider,
+            "clarification": final_clarification,
             "degraded": final_degraded,
         })
 
@@ -207,6 +219,7 @@ async def chat_standard(request: ChatRequest):
             sources=result.get("sources", []),
             provider=result.get("provider", "Groq"),
             route=str(result.get("route")),
+            clarification=result.get("clarification"),
             cache_hit=result.get("cache_hit", False),
             degraded=result.get("degraded", False),
         )

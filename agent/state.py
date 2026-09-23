@@ -20,7 +20,14 @@ class RouteType(str, Enum):
     """Set by planner node."""
     DIRECT          = "direct"          # Conversational / Chit-chat / Out-of-scope (no retrieval)
     NEEDS_RETRIEVAL = "needs_retrieval" # Academic / Syllabus / Faculty / Specific queries
+    CLARIFY         = "clarify"         # Ambiguous or under-specified query needing user clarification
 
+
+class ClarificationPayload(TypedDict, total=False):
+    """Payload representing a clarification question with UI chips."""
+    question: str
+    slot_needed: Optional[str]
+    options: List[str]
 
 class QueryType(str, Enum):
     """Set by planner node."""
@@ -60,6 +67,7 @@ class AgentState(TypedDict, total=False):
     query_type: QueryType
     intent: Dict[str, Any]
     sub_queries: List[Dict[str, Any]]
+    clarification: Optional[ClarificationPayload]
 
     # ── RETRIEVAL & FUSION ───────────────────────────────────────────────────
     candidate_chunks: List[RetrievedChunk]
